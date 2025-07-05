@@ -1,4 +1,4 @@
-// Função para consultar CNPJ na API pública
+// Função para consultar CNPJ via backend proxy
 export async function consultarCNPJ(cnpj: string) {
   try {
     // Remove caracteres especiais do CNPJ
@@ -8,36 +8,22 @@ export async function consultarCNPJ(cnpj: string) {
       throw new Error('CNPJ deve ter 14 dígitos');
     }
 
-    // Usando a API pública do ReceitaWS
-    const response = await fetch(`https://www.receitaws.com.br/v1/cnpj/${cnpjLimpo}`);
+    // Fazer requisição para o backend proxy
+    const token = localStorage.getItem('auth_token');
+    const response = await fetch(`http://localhost:3001/api/cnpj/${cnpjLimpo}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
     
     if (!response.ok) {
-      throw new Error('Erro na consulta do CNPJ');
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Erro na consulta do CNPJ');
     }
 
     const data = await response.json();
-    
-    if (data.status === 'ERROR') {
-      throw new Error(data.message || 'CNPJ não encontrado');
-    }
-
-    return {
-      nome: data.nome || data.fantasia,
-      razaoSocial: data.nome,
-      nomeFantasia: data.fantasia,
-      cnpj: data.cnpj,
-      email: data.email,
-      telefone: data.telefone,
-      endereco: data.logradouro,
-      numero: data.numero,
-      complemento: data.complemento,
-      bairro: data.bairro,
-      cidade: data.municipio,
-      estado: data.uf,
-      cep: data.cep,
-      situacao: data.situacao,
-      atividade: data.atividade_principal?.[0]?.text
-    };
+    return data;
   } catch (error) {
     console.error('Erro ao consultar CNPJ:', error);
     throw error;
