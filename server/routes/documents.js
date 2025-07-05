@@ -55,7 +55,7 @@ router.post('/', authenticateToken, requireRole(['admin', 'tecnico']), async (re
       title,
       type,
       version,
-      file_url,
+      file_path,
       approved_by,
       approval_date,
       review_date,
@@ -70,12 +70,12 @@ router.post('/', authenticateToken, requireRole(['admin', 'tecnico']), async (re
     const id = uuidv4();
     await executeQuery(`
       INSERT INTO documents (
-        id, title, type, version, file_url, status, approved_by,
+        id, title, type, version, file_path, status, approved_by,
         approval_date, review_date, next_review_date, category,
         created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
     `, [
-      id, title, type, version, file_url, 'ativo', approved_by,
+      id, title, type, version, file_path, 'ativo', approved_by,
       approval_date, review_date, next_review_date, category
     ]);
 
@@ -100,7 +100,7 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'tecnico']), async (
       title,
       type,
       version,
-      file_url,
+      file_path,
       status,
       approved_by,
       approval_date,
@@ -118,12 +118,12 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'tecnico']), async (
 
     await executeQuery(`
       UPDATE documents SET
-        title = ?, type = ?, version = ?, file_url = ?, status = ?,
+        title = ?, type = ?, version = ?, file_path = ?, status = ?,
         approved_by = ?, approval_date = ?, review_date = ?, next_review_date = ?,
         category = ?, updated_at = datetime('now')
       WHERE id = ?
     `, [
-      title, type, version, file_url, status, approved_by,
+      title, type, version, file_path, status, approved_by,
       approval_date, review_date, next_review_date, category, id
     ]);
 

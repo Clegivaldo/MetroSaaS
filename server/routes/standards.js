@@ -49,7 +49,7 @@ router.post('/', authenticateToken, requireRole(['admin', 'tecnico']), async (re
       model,
       calibration_date,
       expiration_date,
-      certificate_url,
+      certificate_path,
       uncertainty,
       range_min,
       range_max,
@@ -83,14 +83,22 @@ router.post('/', authenticateToken, requireRole(['admin', 'tecnico']), async (re
     await executeQuery(`
       INSERT INTO standards (
         id, name, serial_number, type, manufacturer, model,
-        calibration_date, expiration_date, status, certificate_url,
+        calibration_date, expiration_date, status, certificate_path,
         uncertainty, range_min, range_max, unit, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
     `, [
       id, name, serial_number, type, manufacturer, model,
-      calibration_date, expiration_date, status, certificate_url,
+      calibration_date, expiration_date, status, certificate_path,
       uncertainty, range_min, range_max, unit
     ]);
+
+    // Criar histórico
+    await executeQuery(`
+      INSERT INTO standard_history (
+        id, standard_id, version, certificate_path, calibration_date, 
+        expiration_date, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+    `, [uuidv4(), id, 1, certificate_path, calibration_date, expiration_date]);
 
     // Log de auditoria
     await executeQuery(`
@@ -117,7 +125,7 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'tecnico']), async (
       model,
       calibration_date,
       expiration_date,
-      certificate_url,
+      certificate_path,
       uncertainty,
       range_min,
       range_max,
@@ -146,14 +154,30 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'tecnico']), async (
     await executeQuery(`
       UPDATE standards SET
         name = ?, serial_number = ?, type = ?, manufacturer = ?, model = ?,
-        calibration_date = ?, expiration_date = ?, status = ?, certificate_url = ?,
+        calibration_date = ?, expiration_date = ?, status = ?, certificate_path = ?,
         uncertainty = ?, range_min = ?, range_max = ?, unit = ?, updated_at = datetime('now')
       WHERE id = ?
     `, [
       name, serial_number, type, manufacturer, model,
-      calibration_date, expiration_date, status, certificate_url,
+      calibration_date, expiration_date, status, certificate_path,
       uncertainty, range_min, range_max, unit, id
     ]);
+
+    // Se novo certificado foi anexado, criar nova versão no histórico
+    if (certificate_path && certificate_path !== existing.certificate_path) {
+      const lastVersion = await getOne(
+        'SELECT MAX(version) as max_version FROM standard_history WHERE standard_id = ?',
+        [id]
+      );
+      const newVersion = (lastVersion?.max_version || 0) + 1;
+
+      await executeQuery(`
+        INSERT INTO standard_history (
+          id, standard_id, version, certificate_path, calibration_date, 
+          expiration_date, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+      `, [uuidv4(), id, newVersion, certificate_path, calibration_date, expiration_date]);
+    }
 
     // Log de auditoria
     await executeQuery(`
@@ -209,6 +233,24 @@ router.get('/:id', authenticateToken, async (req, res) => {
     res.json(standard);
   } catch (error) {
     console.error('Erro ao obter padrão:', error);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// Obter histórico do padrão
+router.get('/:id/history', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const history = await getAll(`
+      SELECT * FROM standard_history 
+      WHERE standard_id = ?
+      ORDER BY version DESC
+    `, [id]);
+
+    res.json(history);
+  } catch (error) {
+    console.error('Erro ao obter histórico:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, FileText, Calendar, Edit, Trash2, Download, Eye, Upload } from 'lucide-react';
+import { Plus, Search, FileText, Calendar, Edit, Trash2, Upload } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -10,7 +10,6 @@ const documentSchema = z.object({
   type: z.string().min(1, 'Tipo obrigatório'),
   version: z.string().min(1, 'Versão obrigatória'),
   category: z.string().optional(),
-  file_url: z.string().optional(),
   approved_by: z.string().optional(),
   approval_date: z.string().optional(),
   review_date: z.string().optional(),
@@ -24,7 +23,7 @@ interface Document {
   title: string;
   type: string;
   version: string;
-  file_url?: string;
+  file_path?: string;
   status: 'ativo' | 'obsoleto' | 'em_revisao';
   approved_by?: string;
   approved_by_name?: string;
@@ -58,6 +57,8 @@ export function Documents() {
   const [showModal, setShowModal] = useState(false);
   const [editingDocument, setEditingDocument] = useState<Document | null>(null);
   const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const { register, handleSubmit, formState: { errors }, reset, setValue } = useForm<DocumentFormData>({
     resolver: zodResolver(documentSchema),
@@ -108,8 +109,31 @@ export function Documents() {
     }
   };
 
+  const uploadFile = async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const token = localStorage.getItem('auth_token');
+    const response = await fetch('http://localhost:3001/api/upload/documents', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData,
+    });
+
+    if (!response.ok) throw new Error('Erro no upload');
+    return await response.json();
+  };
+
   const onSubmit = async (data: DocumentFormData) => {
     try {
+      setUploading(true);
+      let file_path = '';
+
+      if (selectedFile) {
+        const uploadResult = await uploadFile(selectedFile);
+        file_path = uploadResult.path;
+      }
+
       const token = localStorage.getItem('auth_token');
       const url = editingDocument ? `http://localhost:3001/api/documents/${editingDocument.id}` : 'http://localhost:3001/api/documents';
       const method = editingDocument ? 'PUT' : 'POST';
@@ -117,13 +141,14 @@ export function Documents() {
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify(data),
+        body: JSON.stringify({ ...data, file_path }),
       });
 
       if (response.ok) {
         toast.success(editingDocument ? 'Documento atualizado!' : 'Documento criado!');
         setShowModal(false);
         setEditingDocument(null);
+        setSelectedFile(null);
         reset();
         fetchDocuments();
       } else {
@@ -132,6 +157,8 @@ export function Documents() {
       }
     } catch (error) {
       toast.error('Erro ao salvar documento');
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -141,7 +168,6 @@ export function Documents() {
     setValue('type', document.type);
     setValue('version', document.version);
     setValue('category', document.category || '');
-    setValue('file_url', document.file_url || '');
     setValue('approved_by', document.approved_by || '');
     setValue('approval_date', document.approval_date ? document.approval_date.split('T')[0] : '');
     setValue('review_date', document.review_date ? document.review_date.split('T')[0] : '');
@@ -172,6 +198,7 @@ export function Documents() {
 
   const openCreateModal = () => {
     setEditingDocument(null);
+    setSelectedFile(null);
     reset();
     setShowModal(true);
   };
@@ -275,9 +302,9 @@ export function Documents() {
                         <button onClick={() => handleDelete(document.id)} className="text-red-600 hover:text-red-900 transition-colors">
                           <Trash2 className="w-4 h-4" />
                         </button>
-                        {document.file_url && (
-                          <a href={document.file_url} target="_blank" rel="noopener noreferrer" className="text-green-600 hover:text-green-900 transition-colors">
-                            <Download className="w-4 h-4" />
+                        {document.file_path && (
+                          <a href={`http://localhost:3001${document.file_path}`} target="_blank" rel="noopener noreferrer" className="text-green-600 hover:text-green-900 transition-colors">
+                            <FileText className="w-4 h-4" />
                           </a>
                         )}
                       </div>
@@ -341,8 +368,13 @@ export function Documents() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">URL do Arquivo</label>
-                    <input {...register('file_url')} placeholder="https://..." className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Arquivo do Documento</label>
+                    <input 
+                      type="file" 
+                      accept=".pdf,.doc,.docx"
+                      onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
+                    />
                   </div>
 
                   <div>
@@ -372,11 +404,11 @@ export function Documents() {
                 </div>
 
                 <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">
-                  <button type="button" onClick={() => { setShowModal(false); setEditingDocument(null); reset(); }} className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                  <button type="button" onClick={() => { setShowModal(false); setEditingDocument(null); setSelectedFile(null); reset(); }} className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
                     Cancelar
                   </button>
-                  <button type="submit" className="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors">
-                    {editingDocument ? 'Atualizar' : 'Criar'} Documento
+                  <button type="submit" disabled={uploading} className="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50">
+                    {uploading ? 'Salvando...' : editingDocument ? 'Atualizar' : 'Criar'} Documento
                   </button>
                 </div>
               </form>

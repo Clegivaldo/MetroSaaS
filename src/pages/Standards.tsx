@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Wrench, Calendar, AlertTriangle, CheckCircle, Edit, Trash2 } from 'lucide-react';
+import { Plus, Search, Wrench, Calendar, AlertTriangle, CheckCircle, Edit, Trash2, FileText } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -13,7 +13,6 @@ const standardSchema = z.object({
   model: z.string().optional(),
   calibration_date: z.string().min(1, 'Data calibração obrigatória'),
   expiration_date: z.string().min(1, 'Data vencimento obrigatória'),
-  certificate_url: z.string().optional(),
   uncertainty: z.string().optional(),
   range_min: z.number().optional(),
   range_max: z.number().optional(),
@@ -32,7 +31,7 @@ interface Standard {
   calibration_date: string;
   expiration_date: string;
   status: 'valido' | 'vencido' | 'prestes_vencer';
-  certificate_url?: string;
+  certificate_path?: string;
   uncertainty?: string;
   range_min?: number;
   range_max?: number;
@@ -62,6 +61,8 @@ export function Standards() {
   const [showModal, setShowModal] = useState(false);
   const [editingStandard, setEditingStandard] = useState<Standard | null>(null);
   const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const { register, handleSubmit, formState: { errors }, reset, setValue } = useForm<StandardFormData>({
     resolver: zodResolver(standardSchema),
@@ -96,8 +97,31 @@ export function Standards() {
     }
   };
 
+  const uploadFile = async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const token = localStorage.getItem('auth_token');
+    const response = await fetch('http://localhost:3001/api/upload/standards', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData,
+    });
+
+    if (!response.ok) throw new Error('Erro no upload');
+    return await response.json();
+  };
+
   const onSubmit = async (data: StandardFormData) => {
     try {
+      setUploading(true);
+      let certificate_path = '';
+
+      if (selectedFile) {
+        const uploadResult = await uploadFile(selectedFile);
+        certificate_path = uploadResult.path;
+      }
+
       const token = localStorage.getItem('auth_token');
       const url = editingStandard ? `http://localhost:3001/api/standards/${editingStandard.id}` : 'http://localhost:3001/api/standards';
       const method = editingStandard ? 'PUT' : 'POST';
@@ -105,13 +129,14 @@ export function Standards() {
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify(data),
+        body: JSON.stringify({ ...data, certificate_path }),
       });
 
       if (response.ok) {
         toast.success(editingStandard ? 'Padrão atualizado!' : 'Padrão criado!');
         setShowModal(false);
         setEditingStandard(null);
+        setSelectedFile(null);
         reset();
         fetchStandards();
       } else {
@@ -120,6 +145,8 @@ export function Standards() {
       }
     } catch (error) {
       toast.error('Erro ao salvar padrão');
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -154,18 +181,10 @@ export function Standards() {
 
   const openCreateModal = () => {
     setEditingStandard(null);
+    setSelectedFile(null);
     reset();
     setShowModal(true);
   };
-
-  const filteredStandards = standards.filter(standard => {
-    const matchesSearch = standard.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         standard.serial_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         (standard.manufacturer && standard.manufacturer.toLowerCase().includes(searchTerm.toLowerCase()));
-    const matchesStatus = !statusFilter || standard.status === statusFilter;
-    const matchesType = !typeFilter || standard.type === typeFilter;
-    return matchesSearch && matchesStatus && matchesType;
-  });
 
   if (loading) {
     return (
@@ -230,7 +249,7 @@ export function Standards() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredStandards.map((standard) => {
+              {standards.map((standard) => {
                 const statusInfo = getStatusInfo(standard.status);
                 const StatusIcon = statusInfo.icon;
                 
@@ -275,9 +294,9 @@ export function Standards() {
                         <button onClick={() => handleDelete(standard.id)} className="text-red-600 hover:text-red-900 transition-colors">
                           <Trash2 className="w-4 h-4" />
                         </button>
-                        {standard.certificate_url && (
-                          <a href={standard.certificate_url} target="_blank" rel="noopener noreferrer" className="text-green-600 hover:text-green-900 transition-colors">
-                            Certificado
+                        {standard.certificate_path && (
+                          <a href={`http://localhost:3001${standard.certificate_path}`} target="_blank" rel="noopener noreferrer" className="text-green-600 hover:text-green-900 transition-colors">
+                            <FileText className="w-4 h-4" />
                           </a>
                         )}
                       </div>
@@ -290,7 +309,7 @@ export function Standards() {
         </div>
       </div>
 
-      {filteredStandards.length === 0 && (
+      {standards.length === 0 && (
         <div className="text-center py-12">
           <Wrench className="mx-auto h-12 w-12 text-gray-400" />
           <h3 className="mt-2 text-sm font-medium text-gray-900">Nenhum padrão encontrado</h3>
@@ -359,8 +378,13 @@ export function Standards() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">URL Certificado</label>
-                    <input {...register('certificate_url')} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="https://..." />
+                    <label className="block text-sm font-medium text-gray-700 mb-2">PDF do Certificado</label>
+                    <input 
+                      type="file" 
+                      accept=".pdf"
+                      onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
+                    />
                   </div>
 
                   <div>
@@ -385,11 +409,11 @@ export function Standards() {
                 </div>
 
                 <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">
-                  <button type="button" onClick={() => { setShowModal(false); setEditingStandard(null); reset(); }} className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                  <button type="button" onClick={() => { setShowModal(false); setEditingStandard(null); setSelectedFile(null); reset(); }} className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
                     Cancelar
                   </button>
-                  <button type="submit" className="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors">
-                    {editingStandard ? 'Atualizar' : 'Criar'} Padrão
+                  <button type="submit" disabled={uploading} className="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50">
+                    {uploading ? 'Salvando...' : editingStandard ? 'Atualizar' : 'Criar'} Padrão
                   </button>
                 </div>
               </form>

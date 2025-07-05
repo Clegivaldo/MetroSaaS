@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Award, Calendar, AlertTriangle, CheckCircle, Edit, Trash2, Download, Eye } from 'lucide-react';
+import { Plus, Search, Award, Calendar, AlertTriangle, CheckCircle, Edit, Trash2, Upload, FileText } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -11,8 +11,6 @@ const certificateSchema = z.object({
   certificate_number: z.string().min(1, 'Número certificado obrigatório'),
   calibration_date: z.string().min(1, 'Data calibração obrigatória'),
   expiration_date: z.string().min(1, 'Data vencimento obrigatória'),
-  temperature: z.number().optional(),
-  humidity: z.number().optional(),
   observations: z.string().optional(),
 });
 
@@ -28,10 +26,8 @@ interface Certificate {
   calibration_date: string;
   expiration_date: string;
   status: 'valido' | 'vencido' | 'prestes_vencer';
-  temperature?: number;
-  humidity?: number;
   observations?: string;
-  pdf_url?: string;
+  pdf_path?: string;
   technician_name?: string;
   created_at: string;
   updated_at: string;
@@ -53,12 +49,13 @@ const getStatusInfo = (status: string) => {
 export function Certificates() {
   const [certificates, setCertificates] = useState<Certificate[]>([]);
   const [clients, setClients] = useState<any[]>([]);
-  const [equipment, setEquipment] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingCertificate, setEditingCertificate] = useState<Certificate | null>(null);
   const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const { register, handleSubmit, formState: { errors }, reset, setValue } = useForm<CertificateFormData>({
     resolver: zodResolver(certificateSchema),
@@ -108,8 +105,31 @@ export function Certificates() {
     }
   };
 
+  const uploadFile = async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const token = localStorage.getItem('auth_token');
+    const response = await fetch('http://localhost:3001/api/upload/certificates', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData,
+    });
+
+    if (!response.ok) throw new Error('Erro no upload');
+    return await response.json();
+  };
+
   const onSubmit = async (data: CertificateFormData) => {
     try {
+      setUploading(true);
+      let pdf_path = '';
+
+      if (selectedFile) {
+        const uploadResult = await uploadFile(selectedFile);
+        pdf_path = uploadResult.path;
+      }
+
       const token = localStorage.getItem('auth_token');
       const url = editingCertificate ? `http://localhost:3001/api/certificates/${editingCertificate.id}` : 'http://localhost:3001/api/certificates';
       const method = editingCertificate ? 'PUT' : 'POST';
@@ -117,13 +137,14 @@ export function Certificates() {
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify(data),
+        body: JSON.stringify({ ...data, pdf_path }),
       });
 
       if (response.ok) {
         toast.success(editingCertificate ? 'Certificado atualizado!' : 'Certificado criado!');
         setShowModal(false);
         setEditingCertificate(null);
+        setSelectedFile(null);
         reset();
         fetchCertificates();
       } else {
@@ -132,6 +153,8 @@ export function Certificates() {
       }
     } catch (error) {
       toast.error('Erro ao salvar certificado');
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -142,8 +165,6 @@ export function Certificates() {
     setValue('certificate_number', certificate.certificate_number);
     setValue('calibration_date', certificate.calibration_date.split('T')[0]);
     setValue('expiration_date', certificate.expiration_date.split('T')[0]);
-    setValue('temperature', certificate.temperature);
-    setValue('humidity', certificate.humidity);
     setValue('observations', certificate.observations || '');
     setShowModal(true);
   };
@@ -171,6 +192,7 @@ export function Certificates() {
 
   const openCreateModal = () => {
     setEditingCertificate(null);
+    setSelectedFile(null);
     reset();
     setShowModal(true);
   };
@@ -199,7 +221,7 @@ export function Certificates() {
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
             <input
               type="text"
-              placeholder="Pesquisar por cliente, equipamento ou número de série..."
+              placeholder="Pesquisar por cliente, equipamento ou número..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -276,9 +298,9 @@ export function Certificates() {
                         <button onClick={() => handleDelete(certificate.id)} className="text-red-600 hover:text-red-900 transition-colors">
                           <Trash2 className="w-4 h-4" />
                         </button>
-                        {certificate.pdf_url && (
-                          <a href={certificate.pdf_url} target="_blank" rel="noopener noreferrer" className="text-green-600 hover:text-green-900 transition-colors">
-                            <Download className="w-4 h-4" />
+                        {certificate.pdf_path && (
+                          <a href={`http://localhost:3001${certificate.pdf_path}`} target="_blank" rel="noopener noreferrer" className="text-green-600 hover:text-green-900 transition-colors">
+                            <FileText className="w-4 h-4" />
                           </a>
                         )}
                       </div>
@@ -347,13 +369,13 @@ export function Certificates() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Temperatura (°C)</label>
-                    <input type="number" step="0.1" {...register('temperature', { valueAsNumber: true })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Umidade (%)</label>
-                    <input type="number" step="0.1" {...register('humidity', { valueAsNumber: true })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                    <label className="block text-sm font-medium text-gray-700 mb-2">PDF do Certificado</label>
+                    <input 
+                      type="file" 
+                      accept=".pdf"
+                      onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
+                    />
                   </div>
 
                   <div className="md:col-span-2">
@@ -363,11 +385,11 @@ export function Certificates() {
                 </div>
 
                 <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">
-                  <button type="button" onClick={() => { setShowModal(false); setEditingCertificate(null); reset(); }} className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                  <button type="button" onClick={() => { setShowModal(false); setEditingCertificate(null); setSelectedFile(null); reset(); }} className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
                     Cancelar
                   </button>
-                  <button type="submit" className="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors">
-                    {editingCertificate ? 'Atualizar' : 'Criar'} Certificado
+                  <button type="submit" disabled={uploading} className="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50">
+                    {uploading ? 'Salvando...' : editingCertificate ? 'Atualizar' : 'Criar'} Certificado
                   </button>
                 </div>
               </form>

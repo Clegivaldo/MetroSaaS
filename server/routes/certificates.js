@@ -2,6 +2,7 @@ import express from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { executeQuery, getOne, getAll } from '../database/connection.js';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
+import emailService from '../services/emailService.js';
 
 const router = express.Router();
 
@@ -53,9 +54,8 @@ router.post('/', authenticateToken, requireRole(['admin', 'tecnico']), async (re
       certificate_number,
       calibration_date,
       expiration_date,
-      temperature,
-      humidity,
-      observations
+      observations,
+      pdf_path
     } = req.body;
 
     if (!client_id || !equipment_id || !certificate_number || !calibration_date || !expiration_date) {
@@ -85,13 +85,36 @@ router.post('/', authenticateToken, requireRole(['admin', 'tecnico']), async (re
     await executeQuery(`
       INSERT INTO certificates (
         id, client_id, equipment_id, certificate_number, calibration_date, 
-        expiration_date, status, technician_id, temperature, humidity, 
-        observations, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+        expiration_date, status, technician_id, observations, pdf_path,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
     `, [
       id, client_id, equipment_id, certificate_number, calibration_date,
-      expiration_date, status, req.user.id, temperature, humidity, observations
+      expiration_date, status, req.user.id, observations, pdf_path
     ]);
+
+    // Criar histórico
+    await executeQuery(`
+      INSERT INTO certificate_history (
+        id, certificate_id, version, pdf_path, calibration_date, 
+        expiration_date, technician_id, observations, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `, [uuidv4(), id, 1, pdf_path, calibration_date, expiration_date, req.user.id, observations]);
+
+    // Enviar email para cliente
+    try {
+      const client = await getOne('SELECT * FROM clients WHERE id = ?', [client_id]);
+      if (client && client.email) {
+        await emailService.sendCertificateCreated(client.email, {
+          client_name: client.name,
+          certificate_number,
+          equipment_name: equipment_id,
+          expiration_date
+        });
+      }
+    } catch (emailError) {
+      console.error('Erro ao enviar email:', emailError);
+    }
 
     // Log de auditoria
     await executeQuery(`
@@ -116,10 +139,8 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'tecnico']), async (
       certificate_number,
       calibration_date,
       expiration_date,
-      temperature,
-      humidity,
       observations,
-      pdf_url
+      pdf_path
     } = req.body;
 
     // Verificar se o certificado existe
@@ -145,13 +166,28 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'tecnico']), async (
       UPDATE certificates SET
         client_id = ?, equipment_id = ?, certificate_number = ?, 
         calibration_date = ?, expiration_date = ?, status = ?, 
-        temperature = ?, humidity = ?, observations = ?, pdf_url = ?,
-        updated_at = datetime('now')
+        observations = ?, pdf_path = ?, updated_at = datetime('now')
       WHERE id = ?
     `, [
       client_id, equipment_id, certificate_number, calibration_date,
-      expiration_date, status, temperature, humidity, observations, pdf_url, id
+      expiration_date, status, observations, pdf_path, id
     ]);
+
+    // Se novo PDF foi anexado, criar nova versão no histórico
+    if (pdf_path && pdf_path !== existing.pdf_path) {
+      const lastVersion = await getOne(
+        'SELECT MAX(version) as max_version FROM certificate_history WHERE certificate_id = ?',
+        [id]
+      );
+      const newVersion = (lastVersion?.max_version || 0) + 1;
+
+      await executeQuery(`
+        INSERT INTO certificate_history (
+          id, certificate_id, version, pdf_path, calibration_date, 
+          expiration_date, technician_id, observations, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      `, [uuidv4(), id, newVersion, pdf_path, calibration_date, expiration_date, req.user.id, observations]);
+    }
 
     // Log de auditoria
     await executeQuery(`
@@ -214,6 +250,26 @@ router.get('/:id', authenticateToken, async (req, res) => {
     res.json(certificate);
   } catch (error) {
     console.error('Erro ao obter certificado:', error);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// Obter histórico do certificado
+router.get('/:id/history', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const history = await getAll(`
+      SELECT ch.*, u.name as technician_name
+      FROM certificate_history ch
+      LEFT JOIN users u ON ch.technician_id = u.id
+      WHERE ch.certificate_id = ?
+      ORDER BY ch.version DESC
+    `, [id]);
+
+    res.json(history);
+  } catch (error) {
+    console.error('Erro ao obter histórico:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });

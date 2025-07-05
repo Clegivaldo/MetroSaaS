@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
-import { getAll, getOne } from '../database/connection.js';
+import { getAll, getOne, executeQuery } from '../database/connection.js';
+import { v4 as uuidv4 } from 'uuid';
 
 class EmailService {
   constructor() {
@@ -58,14 +59,13 @@ class EmailService {
       // Log do email enviado
       await executeQuery(`
         INSERT INTO email_logs (id, recipient, subject, template_used, status, sent_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, datetime('now'))
       `, [
-        `email-${Date.now()}`,
+        uuidv4(),
         to,
         subject,
         templateKey,
-        'sent',
-        new Date().toISOString()
+        'sent'
       ]);
 
       return result;
@@ -75,15 +75,14 @@ class EmailService {
       // Log do erro
       await executeQuery(`
         INSERT INTO email_logs (id, recipient, subject, template_used, status, error_message, sent_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
       `, [
-        `email-${Date.now()}`,
+        uuidv4(),
         to,
         subject,
         templateKey,
         'failed',
-        error.message,
-        new Date().toISOString()
+        error.message
       ]);
 
       throw error;
@@ -150,6 +149,20 @@ class EmailService {
       system_name: 'MetroSaaS',
       password
     });
+  }
+
+  async sendTestEmail(email) {
+    const subject = 'Teste de Configuração SMTP - MetroSaaS';
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #2563EB;">Teste de Email</h2>
+        <p>Este é um email de teste para verificar a configuração SMTP do sistema MetroSaaS.</p>
+        <p>Se você recebeu este email, a configuração está funcionando corretamente!</p>
+        <p>Data/Hora: ${new Date().toLocaleString('pt-BR')}</p>
+      </div>
+    `;
+
+    await this.sendEmail(email, subject, html, 'test_email');
   }
 
   async getTemplate(templateKey) {
