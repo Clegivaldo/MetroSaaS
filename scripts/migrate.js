@@ -10,18 +10,15 @@ const __dirname = dirname(__filename);
 const dbPath = join(__dirname, '../server/database/database.db');
 const dataDir = dirname(dbPath);
 
-// Garante que o diretório exista
 if (!existsSync(dataDir)) {
   mkdirSync(dataDir, { recursive: true });
 }
 
-// Cria arquivo vazio se não existir
 if (!existsSync(dbPath)) {
   writeFileSync(dbPath, '');
   console.log('✅ Created empty database file');
 }
 
-// Abre conexão com SQLite
 const db = await open({
   filename: dbPath,
   driver: sqlite3.Database
@@ -70,7 +67,7 @@ const migrations = [
     calibration_date DATE NOT NULL,
     expiration_date DATE NOT NULL,
     status TEXT CHECK(status IN ('valido', 'vencido', 'prestes_vencer')) NOT NULL,
-    certificate_url TEXT,
+    certificate_path TEXT,
     uncertainty TEXT,
     range_min REAL,
     range_max REAL,
@@ -103,16 +100,41 @@ const migrations = [
     calibration_date DATE NOT NULL,
     expiration_date DATE NOT NULL,
     status TEXT CHECK(status IN ('valido', 'vencido', 'prestes_vencer')) NOT NULL,
-    pdf_url TEXT,
+    pdf_path TEXT,
     technician_id TEXT,
-    temperature REAL,
-    humidity REAL,
     observations TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
     FOREIGN KEY (equipment_id) REFERENCES equipment(id) ON DELETE CASCADE,
     FOREIGN KEY (technician_id) REFERENCES users(id)
+  );
+  `,
+  `
+  CREATE TABLE IF NOT EXISTS certificate_history (
+    id TEXT PRIMARY KEY,
+    certificate_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    pdf_path TEXT NOT NULL,
+    calibration_date DATE NOT NULL,
+    expiration_date DATE NOT NULL,
+    technician_id TEXT,
+    observations TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (certificate_id) REFERENCES certificates(id) ON DELETE CASCADE,
+    FOREIGN KEY (technician_id) REFERENCES users(id)
+  );
+  `,
+  `
+  CREATE TABLE IF NOT EXISTS standard_history (
+    id TEXT PRIMARY KEY,
+    standard_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    certificate_path TEXT NOT NULL,
+    calibration_date DATE NOT NULL,
+    expiration_date DATE NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (standard_id) REFERENCES standards(id) ON DELETE CASCADE
   );
   `,
   `
@@ -157,7 +179,7 @@ const migrations = [
     title TEXT NOT NULL,
     type TEXT NOT NULL,
     version TEXT NOT NULL,
-    file_url TEXT,
+    file_path TEXT,
     status TEXT CHECK(status IN ('ativo', 'obsoleto', 'em_revisao')) DEFAULT 'ativo',
     approved_by TEXT,
     approval_date DATE,

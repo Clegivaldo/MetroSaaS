@@ -38,7 +38,7 @@ class EmailService {
     return settings;
   }
 
-  async sendEmail(to, subject, html, template = null) {
+  async sendEmail(to, subject, html, templateKey = null) {
     if (!this.transporter) {
       throw new Error('Configuração de email não encontrada');
     }
@@ -63,7 +63,7 @@ class EmailService {
         `email-${Date.now()}`,
         to,
         subject,
-        template,
+        templateKey,
         'sent',
         new Date().toISOString()
       ]);
@@ -80,7 +80,7 @@ class EmailService {
         `email-${Date.now()}`,
         to,
         subject,
-        template,
+        templateKey,
         'failed',
         error.message,
         new Date().toISOString()
@@ -90,63 +90,66 @@ class EmailService {
     }
   }
 
-  async sendPasswordReset(email, newPassword) {
-    const template = await this.getTemplate('password_reset');
-    const html = template.content
-      .replace(/{{email}}/g, email)
-      .replace(/{{new_password}}/g, newPassword)
-      .replace(/{{system_name}}/g, 'MetroSaaS');
+  async sendWithTemplate(templateKey, to, variables = {}) {
+    const template = await this.getTemplate(templateKey);
+    
+    let content = template.content;
+    let subject = template.subject;
 
-    await this.sendEmail(email, template.subject.replace(/{{system_name}}/g, 'MetroSaaS'), html, 'password_reset');
+    // Substituir variáveis
+    Object.entries(variables).forEach(([key, value]) => {
+      const regex = new RegExp(`{{${key}}}`, 'g');
+      content = content.replace(regex, value);
+      subject = subject.replace(regex, value);
+    });
+
+    await this.sendEmail(to, subject, content, templateKey);
+  }
+
+  async sendPasswordReset(email, newPassword) {
+    await this.sendWithTemplate('password_reset', email, {
+      email,
+      new_password: newPassword,
+      system_name: 'MetroSaaS'
+    });
+  }
+
+  async sendCertificateCreated(email, certificateData) {
+    await this.sendWithTemplate('certificate_created', email, {
+      client_name: certificateData.client_name,
+      certificate_number: certificateData.certificate_number,
+      equipment_name: certificateData.equipment_name,
+      expiration_date: new Date(certificateData.expiration_date).toLocaleDateString('pt-BR'),
+      system_name: 'MetroSaaS'
+    });
+  }
+
+  async sendCertificateExpiring(email, certificates) {
+    let certificatesList = '';
+    certificates.forEach(cert => {
+      certificatesList += `<li>${cert.equipment_name} - Vence em ${cert.days_to_expire} dias</li>`;
+    });
+
+    await this.sendWithTemplate('certificate_expiring', email, {
+      certificates_list: certificatesList,
+      system_name: 'MetroSaaS'
+    });
   }
 
   async sendWelcomeEmail(email, name, role, password) {
-    const template = await this.getTemplate('welcome');
     const roleNames = {
       admin: 'Administrador',
       tecnico: 'Técnico',
       cliente: 'Cliente'
     };
 
-    const html = template.content
-      .replace(/{{user_name}}/g, name)
-      .replace(/{{email}}/g, email)
-      .replace(/{{role}}/g, roleNames[role] || role)
-      .replace(/{{system_name}}/g, 'MetroSaaS')
-      .replace(/{{password}}/g, password);
-
-    await this.sendEmail(email, template.subject.replace(/{{system_name}}/g, 'MetroSaaS'), html, 'welcome');
-  }
-
-  async sendCertificateExpiring(email, certificates) {
-    const template = await this.getTemplate('certificate_expiring');
-    let certificatesList = '';
-    
-    certificates.forEach(cert => {
-      certificatesList += `<li>${cert.equipment_name} - Vence em ${cert.days_to_expire} dias</li>`;
+    await this.sendWithTemplate('welcome', email, {
+      user_name: name,
+      email,
+      role: roleNames[role] || role,
+      system_name: 'MetroSaaS',
+      password
     });
-
-    const html = template.content
-      .replace(/{{certificates_list}}/g, certificatesList)
-      .replace(/{{system_name}}/g, 'MetroSaaS');
-
-    await this.sendEmail(email, template.subject.replace(/{{system_name}}/g, 'MetroSaaS'), html, 'certificate_expiring');
-  }
-
-  async sendTestEmail(email) {
-    const html = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #2563EB;">Teste de Configuração SMTP</h2>
-        <p>Este é um email de teste para verificar se as configurações SMTP estão funcionando corretamente.</p>
-        <p>Se você recebeu este email, a configuração está funcionando perfeitamente!</p>
-        <hr style="margin: 30px 0;">
-        <p style="color: #6b7280; font-size: 12px;">
-          Email enviado pelo sistema MetroSaaS em ${new Date().toLocaleString('pt-BR')}
-        </p>
-      </div>
-    `;
-
-    await this.sendEmail(email, 'Teste de Configuração SMTP - MetroSaaS', html, 'test');
   }
 
   async getTemplate(templateKey) {

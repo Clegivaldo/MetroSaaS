@@ -11,12 +11,10 @@ const __dirname = dirname(__filename);
 const dbPath = join(__dirname, '../server/database/database.db');
 const dataDir = dirname(dbPath);
 
-// Ensure data directory exists
 if (!existsSync(dataDir)) {
   mkdirSync(dataDir, { recursive: true });
 }
 
-// Create empty db file if not exists
 if (!existsSync(dbPath)) {
   writeFileSync(dbPath, '');
   console.log('✅ Created empty database file');
@@ -84,16 +82,62 @@ try {
           <p><strong>Nova Senha:</strong> {{new_password}}</p>
         </div>
         <p>Por favor, faça login e altere sua senha imediatamente.</p>
-        <p>Se você não solicitou esta alteração, entre em contato conosco imediatamente.</p>
-        <hr style="margin: 30px 0;">
-        <p style="color: #6b7280; font-size: 12px;">
-          Este é um email automático, não responda.
-        </p>
       </div>`,
       '["email", "new_password", "system_name"]',
       'ativo'
     ],
-    // ... os demais templates aqui
+    [
+      'template-2',
+      'certificate_created',
+      'Certificado Emitido',
+      'Certificado de Calibração Emitido - {{certificate_number}}',
+      `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #2563EB;">Certificado de Calibração Emitido</h2>
+        <p>Prezado(a) {{client_name}},</p>
+        <p>Informamos que o certificado de calibração foi emitido com sucesso:</p>
+        <div style="background-color: #f3f4f6; padding: 20px; border-radius: 8px; margin: 20px 0;">
+          <p><strong>Número do Certificado:</strong> {{certificate_number}}</p>
+          <p><strong>Equipamento:</strong> {{equipment_name}}</p>
+          <p><strong>Validade:</strong> {{expiration_date}}</p>
+        </div>
+        <p>O certificado está disponível para download em nosso sistema.</p>
+      </div>`,
+      '["client_name", "certificate_number", "equipment_name", "expiration_date"]',
+      'ativo'
+    ],
+    [
+      'template-3',
+      'certificate_expiring',
+      'Certificados Vencendo',
+      'Certificados próximos ao vencimento - {{system_name}}',
+      `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #f59e0b;">Certificados Próximos ao Vencimento</h2>
+        <p>Os seguintes certificados estão próximos ao vencimento:</p>
+        <ul>{{certificates_list}}</ul>
+        <p>Entre em contato para agendar a recalibração.</p>
+      </div>`,
+      '["certificates_list", "system_name"]',
+      'ativo'
+    ],
+    [
+      'template-4',
+      'welcome',
+      'Bem-vindo ao Sistema',
+      'Bem-vindo ao {{system_name}}',
+      `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #2563EB;">Bem-vindo ao {{system_name}}</h2>
+        <p>Olá {{user_name}},</p>
+        <p>Sua conta foi criada com sucesso no sistema {{system_name}}.</p>
+        <div style="background-color: #f3f4f6; padding: 20px; border-radius: 8px; margin: 20px 0;">
+          <p><strong>Email:</strong> {{email}}</p>
+          <p><strong>Perfil:</strong> {{role}}</p>
+          <p><strong>Senha Temporária:</strong> {{password}}</p>
+        </div>
+        <p>Por favor, faça login e altere sua senha.</p>
+      </div>`,
+      '["user_name", "email", "role", "password", "system_name"]',
+      'ativo'
+    ]
   ];
 
   for (const t of emailTemplates) {
@@ -101,62 +145,6 @@ try {
       `INSERT OR IGNORE INTO email_templates (id, template_key, name, subject, content, variables, status)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       t
-    );
-  }
-
-  // Clientes de exemplo
-  const sampleClients = [
-    ['client-1', 'Empresa ABC Ltda', '12.345.678/0001-90', 'contato@empresaabc.com.br', '(11) 9999-9999', 'São Paulo', 'SP', 'ativo'],
-    ['client-2', 'Indústria XYZ S.A.', '98.765.432/0001-10', 'laboratorio@industriaxyz.com.br', '(21) 8888-8888', 'Rio de Janeiro', 'RJ', 'ativo'],
-  ];
-
-  for (const c of sampleClients) {
-    await db.run(
-      `INSERT OR IGNORE INTO clients (id, name, cnpj, email, phone, city, state, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      c
-    );
-  }
-
-  // Padrões de exemplo
-  const sampleStandards = [
-    ['std-1', 'Padrão de Massa 1kg', 'PM-001', 'Massa', '2024-01-15', '2025-01-15', 'valido'],
-    ['std-2', 'Termômetro Padrão', 'TP-002', 'Temperatura', '2023-12-10', '2024-12-10', 'prestes_vencer'],
-  ];
-
-  for (const s of sampleStandards) {
-    await db.run(
-      `INSERT OR IGNORE INTO standards (id, name, serial_number, type, calibration_date, expiration_date, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      s
-    );
-  }
-
-  // Treinamentos
-  const sampleTrainings = [
-    ['train-1', 'Introdução à ISO 17025', 'Fundamentos da norma ISO 17025 para laboratórios', 'https://www.youtube.com/watch?v=example1', 60, 'Qualidade', '["admin", "tecnico"]', 'ativo'],
-    ['train-2', 'Calibração de Instrumentos', 'Procedimentos para calibração de instrumentos de medição', 'https://www.youtube.com/watch?v=example2', 90, 'Técnico', '["tecnico"]', 'ativo'],
-  ];
-
-  for (const t of sampleTrainings) {
-    await db.run(
-      `INSERT OR IGNORE INTO trainings (id, title, description, youtube_url, duration, category, required_for, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      t
-    );
-  }
-
-  // Fornecedores
-  const sampleSuppliers = [
-    ['supplier-1', 'Fornecedor de Padrões Ltda', '11.222.333/0001-44', 'vendas@padroes.com.br', '(11) 1111-1111', 'São Paulo', 'SP', 'padroes', 'ativo'],
-    ['supplier-2', 'Serviços de Calibração S.A.', '55.666.777/0001-88', 'contato@calibracao.com.br', '(21) 2222-2222', 'Rio de Janeiro', 'RJ', 'servicos', 'ativo'],
-  ];
-
-  for (const s of sampleSuppliers) {
-    await db.run(
-      `INSERT OR IGNORE INTO suppliers (id, name, cnpj, email, phone, city, state, type, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      s
     );
   }
 
