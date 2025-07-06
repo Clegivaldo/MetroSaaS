@@ -10,7 +10,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "db:migrate": "node scripts/migrate.js"
+    "db:migrate": "node scripts/migrate.cjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.3.4",
