@@ -6,11 +6,11 @@
   "scripts": {
     "dev": "npm run db:migrate && concurrently \"npm run server\" \"npm run client\"",
     "client": "vite",
-    "server": "node --watch server/index.cjs",
+    "server": "node --max-old-space-size=4096 --watch server/index.cjs",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "db:migrate": "node scripts/migrate.cjs"
+    "db:migrate": "node --max-old-space-size=4096 scripts/migrate.cjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.3.4",
