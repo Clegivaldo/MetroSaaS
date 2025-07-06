@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Calculator, Save, Signature } from 'lucide-react';
+import { Plus, Search, Calculator, Save, FileSignature as Signature } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
 
