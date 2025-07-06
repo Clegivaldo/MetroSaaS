@@ -1,50 +1,24 @@
-import express from 'express';
-import bcrypt from 'bcryptjs';
-import { v4 as uuidv4 } from 'uuid';
-import { executeQuery, getOne } from '../database/connection.js';
-import { generateToken, authenticateToken } from '../middleware/auth.js';
-import emailService from '../services/emailService.js';
+const express = require('express');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const sqlite3 = require('sqlite3').verbose();
+const path = require('path');
+const auth = require('../middleware/auth');
 
 const router = express.Router();
+const db = new sqlite3.Database(path.join(__dirname, '../database/database.db'));
+const JWT_SECRET = process.env.JWT_SECRET || 'metrosass_secret_key_2024';
 
 // Login
-router.post('/login', async (req, res) => {
-  try {
-    const { email, password } = req.body;
+router.post('/login', (req, res) => {
+  const { email, password } = req.body;
 
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email e senha são obrigatórios' });
+  db.get('SELECT * FROM users WHERE email = ?', [email], async (err, user) => {
+    if (err) {
+      return res.status(500).json({ error: err.message });
     }
 
-    // Verificar tentativas de login
-    const user = await getOne('SELECT * FROM users WHERE email = ?', [email]);
-
-    if (!user) {
-      return res.status(401).json({ error: 'Credenciais inválidas' });
-    }
-
-    // Verificar se a conta está bloqueada
-    if (user.locked_until && new Date(user.locked_until) > new Date()) {
-      return res.status(423).json({ 
-        error: 'Conta temporariamente bloqueada devido a muitas tentativas de login' 
-      });
-    }
-
-    // Verificar senha
-    const isValidPassword = await bcrypt.compare(password, user.password_hash);
-
-    if (!isValidPassword) {
-      // Incrementar tentativas falhadas
-      await executeQuery(`
-        UPDATE users 
-        SET failed_login_attempts = failed_login_attempts + 1,
-            locked_until = CASE 
-              WHEN failed_login_attempts >= 2 THEN datetime('now', '+15 minutes')
-              ELSE NULL 
-            END
-        WHERE id = ?
-      `, [user.id]);
-
+    if (!user || !await bcrypt.compare(password, user.password)) {
       return res.status(401).json({ error: 'Credenciais inválidas' });
     }
 
@@ -52,111 +26,38 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Usuário inativo' });
     }
 
-    // Reset tentativas e atualizar último login
-    await executeQuery(`
-      UPDATE users 
-      SET failed_login_attempts = 0, 
-          locked_until = NULL, 
-          last_login = datetime('now')
-      WHERE id = ?
-    `, [user.id]);
+    // Atualizar último login
+    db.run('UPDATE users SET last_login = datetime("now") WHERE id = ?', [user.id]);
 
-    // Gerar token
-    const token = generateToken(user);
-
-    // Log de auditoria
-    await executeQuery(`
-      INSERT INTO audit_logs (id, user_id, action, table_name, ip_address, user_agent, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-    `, [uuidv4(), user.id, 'LOGIN', 'users', req.headers['x-forwarded-for'] || req.connection.remoteAddress || req.ip, req.get('User-Agent')]);
+    const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '24h' });
 
     res.json({
       token,
       user: {
         id: user.id,
-        email: user.email,
         name: user.name,
+        email: user.email,
         role: user.role
       }
     });
-  } catch (error) {
-    console.error('Erro no login:', error);
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-// Reset de senha
-router.post('/reset-password', async (req, res) => {
-  try {
-    const { email } = req.body;
-
-    if (!email) {
-      return res.status(400).json({ error: 'Email é obrigatório' });
-    }
-
-    const user = await getOne('SELECT * FROM users WHERE email = ?', [email]);
-
-    if (!user) {
-      // Por segurança, não revelar se o email existe
-      return res.json({ message: 'Se o email existir, uma nova senha será enviada' });
-    }
-
-    // Gerar nova senha
-    const newPassword = Math.random().toString(36).slice(-8);
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-
-    // Atualizar senha no banco
-    await executeQuery('UPDATE users SET password_hash = ? WHERE id = ?', [hashedPassword, user.id]);
-
-    // Enviar email com nova senha
-    try {
-      await emailService.sendPasswordReset(email, newPassword);
-    } catch (emailError) {
-      console.error('Erro ao enviar email:', emailError);
-      return res.status(500).json({ error: 'Erro ao enviar email' });
-    }
-
-    // Log de auditoria
-    await executeQuery(`
-      INSERT INTO audit_logs (id, user_id, action, table_name, ip_address, user_agent, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-    `, [uuidv4(), user.id, 'PASSWORD_RESET', 'users', req.ip, req.get('User-Agent')]);
-
-    res.json({ message: 'Nova senha enviada por email' });
-  } catch (error) {
-    console.error('Erro no reset de senha:', error);
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
+  });
 });
 
 // Verificar token
-router.get('/verify', authenticateToken, async (req, res) => {
-  try {
-    const user = await getOne(
-      'SELECT id, email, name, role, status, last_login, created_at, updated_at FROM users WHERE id = ?',
-      [req.user.id]
-    );
-
-    if (!user) {
-      return res.status(401).json({ error: 'Usuário não encontrado' });
+router.get('/verify', auth, (req, res) => {
+  res.json({
+    user: {
+      id: req.user.id,
+      name: req.user.name,
+      email: req.user.email,
+      role: req.user.role
     }
-
-    res.json({ user });
-  } catch (error) {
-    console.error('Erro ao verificar token:', error);
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
+  });
 });
 
 // Logout
-router.post('/logout', authenticateToken, async (req, res) => {
-  // Log de auditoria
-  await executeQuery(`
-    INSERT INTO audit_logs (id, user_id, action, table_name, ip_address, user_agent, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-  `, [uuidv4(), req.user.id, 'LOGOUT', 'users', req.ip, req.get('User-Agent')]);
-
-  res.json({ message: 'Logout realizado com sucesso' });
+router.post('/logout', auth, (req, res) => {
+  res.json({ success: true });
 });
 
-export default router;
+module.exports = router;

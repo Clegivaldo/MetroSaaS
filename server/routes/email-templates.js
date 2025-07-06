@@ -1,130 +1,69 @@
-import express from 'express';
-import { v4 as uuidv4 } from 'uuid';
-import { executeQuery, getOne, getAll } from '../database/connection.js';
-import { authenticateToken, requireRole } from '../middleware/auth.js';
-import logger from '../utils/logger.js';
+const express = require('express');
+const sqlite3 = require('sqlite3').verbose();
+const path = require('path');
+const auth = require('../middleware/auth');
 
 const router = express.Router();
+const db = new sqlite3.Database(path.join(__dirname, '../database/database.db'));
 
-// Listar templates de email
-router.get('/', authenticateToken, requireRole(['admin']), async (req, res) => {
-  try {
-    const templates = await getAll(`
-      SELECT * FROM email_templates 
-      ORDER BY name
-    `);
-    
-    res.json(templates);
-  } catch (error) {
-    logger.error('Erro ao listar templates de email:', error);
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-// Obter template por ID
-router.get('/:id', authenticateToken, requireRole(['admin']), async (req, res) => {
-  try {
-    const { id } = req.params;
-    
-    const template = await getOne('SELECT * FROM email_templates WHERE id = ?', [id]);
-    
-    if (!template) {
-      return res.status(404).json({ error: 'Template não encontrado' });
+// Listar templates
+router.get('/', auth, (req, res) => {
+  const sql = `SELECT * FROM email_templates ORDER BY name`;
+  
+  db.all(sql, [], (err, rows) => {
+    if (err) {
+      return res.status(500).json({ error: err.message });
     }
-    
-    res.json(template);
-  } catch (error) {
-    logger.error('Erro ao obter template de email:', error);
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
+    res.json(rows);
+  });
 });
 
-// Atualizar template
-router.put('/:id', authenticateToken, requireRole(['admin']), async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { name, subject, body, variables, action } = req.body;
-
-    // Verificar se o template existe
-    const existing = await getOne('SELECT * FROM email_templates WHERE id = ?', [id]);
-    
-    if (!existing) {
-      return res.status(404).json({ error: 'Template não encontrado' });
+// Listar ações de email
+router.get('/actions', auth, (req, res) => {
+  const sql = `SELECT * FROM email_actions ORDER BY name`;
+  
+  db.all(sql, [], (err, rows) => {
+    if (err) {
+      return res.status(500).json({ error: err.message });
     }
-
-    await executeQuery(`
-      UPDATE email_templates SET
-        name = ?, subject = ?, body = ?, variables = ?, action = ?,
-        updated_at = datetime('now')
-      WHERE id = ?
-    `, [name, subject, body, variables, action, id]);
-
-    // Log de auditoria
-    await executeQuery(`
-      INSERT INTO audit_logs (id, user_id, action, table_name, record_id, old_values, new_values, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-    `, [uuidv4(), req.user.id, 'UPDATE', 'email_templates', id, JSON.stringify(existing), JSON.stringify(req.body)]);
-
-    res.json({ message: 'Template atualizado com sucesso' });
-  } catch (error) {
-    logger.error('Erro ao atualizar template de email:', error);
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
+    res.json(rows);
+  });
 });
 
-// Criar novo template
-router.post('/', authenticateToken, requireRole(['admin']), async (req, res) => {
-  try {
-    const { name, subject, body, variables, action } = req.body;
-
-    if (!name || !subject || !body || !action) {
-      return res.status(400).json({ error: 'Todos os campos são obrigatórios' });
+// Vincular template à ação
+router.post('/link', auth, (req, res) => {
+  const { action_id, template_id } = req.body;
+  
+  const sql = `
+    INSERT OR REPLACE INTO email_action_templates (action_id, template_id)
+    VALUES (?, ?)
+  `;
+  
+  db.run(sql, [action_id, template_id], function(err) {
+    if (err) {
+      return res.status(500).json({ error: err.message });
     }
-
-    const id = uuidv4();
-    await executeQuery(`
-      INSERT INTO email_templates (id, name, subject, body, variables, action, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-    `, [id, name, subject, body, variables, action]);
-
-    // Log de auditoria
-    await executeQuery(`
-      INSERT INTO audit_logs (id, user_id, action, table_name, record_id, new_values, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-    `, [uuidv4(), req.user.id, 'CREATE', 'email_templates', id, JSON.stringify(req.body)]);
-
-    res.status(201).json({ id, message: 'Template criado com sucesso' });
-  } catch (error) {
-    logger.error('Erro ao criar template de email:', error);
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
+    res.json({ success: true });
+  });
 });
 
-// Deletar template
-router.delete('/:id', authenticateToken, requireRole(['admin']), async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    // Verificar se o template existe
-    const existing = await getOne('SELECT * FROM email_templates WHERE id = ?', [id]);
-    
-    if (!existing) {
-      return res.status(404).json({ error: 'Template não encontrado' });
+// Obter template por ação
+router.get('/by-action/:action', auth, (req, res) => {
+  const { action } = req.params;
+  
+  const sql = `
+    SELECT et.* FROM email_templates et
+    JOIN email_action_templates eat ON et.id = eat.template_id
+    JOIN email_actions ea ON eat.action_id = ea.id
+    WHERE ea.code = ?
+  `;
+  
+  db.get(sql, [action], (err, row) => {
+    if (err) {
+      return res.status(500).json({ error: err.message });
     }
-
-    await executeQuery('DELETE FROM email_templates WHERE id = ?', [id]);
-
-    // Log de auditoria
-    await executeQuery(`
-      INSERT INTO audit_logs (id, user_id, action, table_name, record_id, old_values, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-    `, [uuidv4(), req.user.id, 'DELETE', 'email_templates', id, JSON.stringify(existing)]);
-
-    res.json({ message: 'Template deletado com sucesso' });
-  } catch (error) {
-    logger.error('Erro ao deletar template de email:', error);
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
+    res.json(row || null);
+  });
 });
 
-export default router; 
+module.exports = router;

@@ -26,6 +26,9 @@ import { UserPermissions } from './pages/UserPermissions';
 import { Users } from './pages/Users';
 import { Grandezas } from './pages/Grandezas';
 import { ClientEquipment } from './pages/ClientEquipment';
+import { Calibrations } from './pages/Calibrations';
+import { LayoutDesigner } from './pages/LayoutDesigner';
+import { Backup } from './pages/Backup';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -62,6 +65,7 @@ function AppRoutes() {
         <Route path="/tipos-equipamentos" element={<EquipmentTypes />} />
         <Route path="/equipamentos-clientes" element={<ClientEquipment />} />
         <Route path="/agendamentos" element={<Appointments />} />
+        <Route path="/calibracoes" element={<Calibrations />} />
         <Route path="/documentos" element={<Documents />} />
         <Route path="/categorias-documentos" element={<DocumentCategories />} />
         <Route path="/grandezas" element={<Grandezas />} />
@@ -72,6 +76,8 @@ function AppRoutes() {
         <Route path="/treinamentos-sistema" element={<SystemTrainings />} />
         <Route path="/manutencao" element={<Maintenance />} />
         <Route path="/nao-conformidades" element={<NonConformities />} />
+        <Route path="/layout-designer" element={<LayoutDesigner />} />
+        <Route path="/backup" element={<Backup />} />
         <Route path="/configuracoes" element={<Settings />} />
         <Route path="/perfil" element={<Profile />} />
         <Route path="/atividades" element={<Activities />} />

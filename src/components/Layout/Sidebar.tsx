@@ -1,26 +1,10 @@
 import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
-  Home,
-  Users,
-  FileText,
-  Calendar,
-  Award,
-  Settings,
-  BookOpen,
-  Building2,
-  Wrench,
-  LogOut,
-  Monitor,
-  User,
-  ChevronDown,
-  AlertTriangle,
-  Folder,
-  Shield,
-  Database,
-  BarChart3,
-  Cog,
-  ClipboardList
+  Home, Users, FileText, Calendar, Award, Settings, BookOpen, Building2, 
+  Wrench, LogOut, Monitor, User, ChevronDown, AlertTriangle, Folder, 
+  Shield, Database, BarChart3, Cog, ClipboardList, Calculator, Layout,
+  HardDrive
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -76,6 +60,7 @@ export function Sidebar() {
       items: [
         { name: 'Certificados', href: '/certificados', icon: Award },
         { name: 'Agendamentos', href: '/agendamentos', icon: Calendar },
+        { name: 'Calibrações', href: '/calibracoes', icon: Calculator },
       ]
     },
     {
@@ -85,6 +70,14 @@ export function Sidebar() {
         { name: 'Não Conformidades', href: '/nao-conformidades', icon: AlertTriangle },
         { name: 'Treinamentos ISO', href: '/treinamentos', icon: BookOpen },
         { name: 'Treinamentos Sistema', href: '/treinamentos-sistema', icon: BookOpen },
+      ]
+    },
+    {
+      name: 'Ferramentas',
+      icon: Layout,
+      items: [
+        { name: 'Designer de Layouts', href: '/layout-designer', icon: Layout },
+        { name: 'Backup', href: '/backup', icon: HardDrive },
       ]
     },
     {
@@ -104,11 +97,15 @@ export function Sidebar() {
   ];
 
   const toggleCategory = (categoryName: string) => {
-    setExpandedCategories(prev => 
-      prev.includes(categoryName) 
-        ? prev.filter(cat => cat !== categoryName)
-        : [...prev, categoryName]
-    );
+    setExpandedCategories(prev => {
+      const isExpanded = prev.includes(categoryName);
+      if (isExpanded) {
+        return prev.filter(cat => cat !== categoryName);
+      } else {
+        // Fechar outras categorias e abrir a selecionada
+        return [categoryName];
+      }
+    });
   };
 
   const handleLogout = () => {
