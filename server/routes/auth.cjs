@@ -1,63 +1,103 @@
 const express = require('express');
-const bcrypt = require('bcryptjs');
+const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
-const auth = require('../middleware/auth');
-
 const router = express.Router();
-const db = new sqlite3.Database(path.join(__dirname, '../database/database.db'));
-const JWT_SECRET = process.env.JWT_SECRET || 'metrosass_secret_key_2024';
 
-// Login
+// Login endpoint
 router.post('/login', (req, res) => {
   const { email, password } = req.body;
+  
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email e senha são obrigatórios' });
+  }
 
+  const db = req.app.get('db');
+  
   db.get('SELECT * FROM users WHERE email = ?', [email], async (err, user) => {
     if (err) {
-      return res.status(500).json({ error: err.message });
+      console.error('Erro ao buscar usuário:', err);
+      return res.status(500).json({ error: 'Erro interno do servidor' });
     }
 
-    if (!user || !await bcrypt.compare(password, user.password)) {
+    if (!user) {
       return res.status(401).json({ error: 'Credenciais inválidas' });
     }
 
-    if (user.status !== 'ativo') {
-      return res.status(401).json({ error: 'Usuário inativo' });
-    }
-
-    // Atualizar último login
-    db.run('UPDATE users SET last_login = datetime("now") WHERE id = ?', [user.id]);
-
-    const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '24h' });
-
-    res.json({
-      token,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role
+    try {
+      const validPassword = await bcrypt.compare(password, user.password);
+      
+      if (!validPassword) {
+        return res.status(401).json({ error: 'Credenciais inválidas' });
       }
-    });
-  });
-});
 
-// Verificar token
-router.get('/verify', auth, (req, res) => {
-  res.json({
-    user: {
-      id: req.user.id,
-      name: req.user.name,
-      email: req.user.email,
-      role: req.user.role
+      const token = jwt.sign(
+        { userId: user.id, email: user.email, role: user.role },
+        process.env.JWT_SECRET || 'your-secret-key',
+        { expiresIn: '24h' }
+      );
+
+      res.json({
+        token,
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role
+        }
+      });
+    } catch (error) {
+      console.error('Erro ao verificar senha:', error);
+      res.status(500).json({ error: 'Erro interno do servidor' });
     }
   });
 });
 
-// Logout
-router.post('/logout', auth, (req, res) => {
-  res.json({ success: true });
+// Register endpoint
+router.post('/register', async (req, res) => {
+  const { name, email, password, role = 'user' } = req.body;
+  
+  if (!name || !email || !password) {
+    return res.status(400).json({ error: 'Nome, email e senha são obrigatórios' });
+  }
+
+  const db = req.app.get('db');
+  
+  try {
+    const hashedPassword = await bcrypt.hash(password, 10);
+    
+    db.run(
+      'INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)',
+      [name, email, hashedPassword, role],
+      function(err) {
+        if (err) {
+          if (err.code === 'SQLITE_CONSTRAINT') {
+            return res.status(400).json({ error: 'Email já está em uso' });
+          }
+          console.error('Erro ao criar usuário:', err);
+          return res.status(500).json({ error: 'Erro interno do servidor' });
+        }
+
+        const token = jwt.sign(
+          { userId: this.lastID, email, role },
+          process.env.JWT_SECRET || 'your-secret-key',
+          { expiresIn: '24h' }
+        );
+
+        res.status(201).json({
+          token,
+          user: {
+            id: this.lastID,
+            name,
+            email,
+            role
+          }
+        });
+      }
+    );
+  } catch (error) {
+    console.error('Erro ao criar hash da senha:', error);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
 });
 
 module.exports = router;
