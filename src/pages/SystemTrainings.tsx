@@ -29,84 +29,8 @@ interface SystemTraining {
   updated_at: string;
 }
 
-// Mock data para treinamentos do sistema
-const mockSystemTrainings: SystemTraining[] = [
-  {
-    id: '1',
-    title: 'Introdução ao MetroSaaS',
-    description: 'Aprenda os conceitos básicos e como navegar pelo sistema',
-    youtube_url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
-    duration: 15,
-    category: 'Básico',
-    required_for: '["admin", "tecnico", "cliente"]',
-    status: 'ativo',
-    created_at: '2024-01-01',
-    updated_at: '2024-01-01'
-  },
-  {
-    id: '2',
-    title: 'Cadastro de Clientes',
-    description: 'Como cadastrar e gerenciar clientes no sistema',
-    youtube_url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
-    duration: 20,
-    category: 'Gestão',
-    required_for: '["admin", "tecnico"]',
-    status: 'ativo',
-    created_at: '2024-01-01',
-    updated_at: '2024-01-01'
-  },
-  {
-    id: '3',
-    title: 'Emissão de Certificados',
-    description: 'Processo completo para emitir certificados de calibração',
-    youtube_url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
-    duration: 30,
-    category: 'Certificação',
-    required_for: '["admin", "tecnico"]',
-    status: 'ativo',
-    created_at: '2024-01-01',
-    updated_at: '2024-01-01'
-  },
-  {
-    id: '4',
-    title: 'Gestão de Padrões',
-    description: 'Como cadastrar e controlar padrões do laboratório',
-    youtube_url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
-    duration: 25,
-    category: 'Técnico',
-    required_for: '["admin", "tecnico"]',
-    status: 'ativo',
-    created_at: '2024-01-01',
-    updated_at: '2024-01-01'
-  },
-  {
-    id: '5',
-    title: 'Agendamentos e Calendário',
-    description: 'Como usar o sistema de agendamentos',
-    youtube_url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
-    duration: 18,
-    category: 'Gestão',
-    required_for: '["admin", "tecnico"]',
-    status: 'ativo',
-    created_at: '2024-01-01',
-    updated_at: '2024-01-01'
-  },
-  {
-    id: '6',
-    title: 'Configurações do Sistema',
-    description: 'Como configurar SMTP, templates e outras configurações',
-    youtube_url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
-    duration: 35,
-    category: 'Administração',
-    required_for: '["admin"]',
-    status: 'ativo',
-    created_at: '2024-01-01',
-    updated_at: '2024-01-01'
-  }
-];
-
 export function SystemTrainings() {
-  const [trainings, setTrainings] = useState<SystemTraining[]>(mockSystemTrainings);
+  const [trainings, setTrainings] = useState<SystemTraining[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [showModal, setShowModal] = useState(false);
@@ -265,23 +189,32 @@ export function SystemTrainings() {
                     href={training.youtube_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex-1 flex items-center justify-center space-x-2 bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 transition-colors text-sm"
+                    className="flex-1 flex items-center justify-center bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 transition-colors text-sm"
+                    title="Assistir"
                   >
                     <Play className="w-4 h-4" />
-                    <span>Assistir</span>
                   </a>
                   {!isCompleted && (
                     <button
                       onClick={() => handleCompleteTraining(training.id)}
-                      className="px-3 py-2 text-sm text-green-600 border border-green-600 rounded-lg hover:bg-green-50 transition-colors"
+                      className="flex items-center justify-center px-3 py-2 text-sm text-green-600 border border-green-600 rounded-lg hover:bg-green-50 transition-colors"
+                      title="Concluir"
                     >
-                      Concluir
+                      <CheckCircle className="w-4 h-4" />
                     </button>
                   )}
-                  <button onClick={() => handleEdit(training)} className="px-3 py-2 text-sm text-blue-600 border border-blue-600 rounded-lg hover:bg-blue-50 transition-colors">
+                  <button 
+                    onClick={() => handleEdit(training)} 
+                    className="flex items-center justify-center px-3 py-2 text-sm text-blue-600 border border-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
+                    title="Editar"
+                  >
                     <Edit className="w-4 h-4" />
                   </button>
-                  <button onClick={() => handleDelete(training.id)} className="px-3 py-2 text-sm text-red-600 border border-red-600 rounded-lg hover:bg-red-50 transition-colors">
+                  <button 
+                    onClick={() => handleDelete(training.id)} 
+                    className="flex items-center justify-center px-3 py-2 text-sm text-red-600 border border-red-600 rounded-lg hover:bg-red-50 transition-colors"
+                    title="Deletar"
+                  >
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>

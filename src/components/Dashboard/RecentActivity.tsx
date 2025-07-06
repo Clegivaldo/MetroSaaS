@@ -107,7 +107,14 @@ export function RecentActivity() {
                   <span className="font-medium">{activity.entity_type}</span>
                 </p>
                 <p className="text-xs text-gray-500 mt-1">
-                  {new Date(activity.created_at).toLocaleString('pt-BR')}
+                  {new Date(activity.created_at + 'Z').toLocaleString('pt-BR', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit'
+                  })}
                 </p>
               </div>
             </div>

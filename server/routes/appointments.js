@@ -11,10 +11,10 @@ router.get('/', authenticateToken, async (req, res) => {
     const { search, status, date, technician_id } = req.query;
     
     let query = `
-      SELECT a.*, c.name as client_name, e.name as equipment_name, u.name as technician_name
+      SELECT a.*, c.name as client_name, ce.identificacao as equipment_name, u.name as technician_name
       FROM appointments a
       LEFT JOIN clients c ON a.client_id = c.id
-      LEFT JOIN equipment e ON a.equipment_id = e.id
+      LEFT JOIN client_equipment ce ON a.equipment_id = ce.id
       LEFT JOIN users u ON a.technician_id = u.id
       WHERE 1=1
     `;
@@ -172,10 +172,10 @@ router.get('/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     
     const appointment = await getOne(`
-      SELECT a.*, c.name as client_name, e.name as equipment_name, u.name as technician_name
+      SELECT a.*, c.name as client_name, ce.identificacao as equipment_name, u.name as technician_name
       FROM appointments a
       LEFT JOIN clients c ON a.client_id = c.id
-      LEFT JOIN equipment e ON a.equipment_id = e.id
+      LEFT JOIN client_equipment ce ON a.equipment_id = ce.id
       LEFT JOIN users u ON a.technician_id = u.id
       WHERE a.id = ?
     `, [id]);

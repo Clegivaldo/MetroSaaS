@@ -48,36 +48,149 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
+// Obter categorias de documentos
+router.get('/categories', authenticateToken, async (req, res) => {
+  try {
+    const categories = await getAll('SELECT * FROM document_categories ORDER BY name');
+    res.json(categories);
+  } catch (error) {
+    console.error('Erro ao obter categorias de documentos:', error);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// Criar categoria de documento
+router.post('/categories', authenticateToken, requireRole(['admin']), async (req, res) => {
+  try {
+    const { name, description, color, sigla } = req.body;
+
+    if (!name) {
+      return res.status(400).json({ error: 'Nome é obrigatório' });
+    }
+
+    const id = uuidv4();
+    await executeQuery(`
+      INSERT INTO document_categories (id, name, description, color, sigla, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+    `, [id, name, description, color, sigla]);
+
+    // Log de auditoria
+    await executeQuery(`
+      INSERT INTO audit_logs (id, user_id, action, table_name, record_id, new_values, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+    `, [uuidv4(), req.user.id, 'CREATE', 'document_categories', id, JSON.stringify(req.body)]);
+
+    res.status(201).json({ id, message: 'Categoria criada com sucesso' });
+  } catch (error) {
+    console.error('Erro ao criar categoria:', error);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// Atualizar categoria de documento
+router.put('/categories/:id', authenticateToken, requireRole(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description, color, sigla } = req.body;
+
+    const existing = await getOne('SELECT * FROM document_categories WHERE id = ?', [id]);
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Categoria não encontrada' });
+    }
+
+    await executeQuery(`
+      UPDATE document_categories SET
+        name = ?, description = ?, color = ?, sigla = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `, [name, description, color, sigla, id]);
+
+    // Log de auditoria
+    await executeQuery(`
+      INSERT INTO audit_logs (id, user_id, action, table_name, record_id, old_values, new_values, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `, [uuidv4(), req.user.id, 'UPDATE', 'document_categories', id, JSON.stringify(existing), JSON.stringify(req.body)]);
+
+    res.json({ message: 'Categoria atualizada com sucesso' });
+  } catch (error) {
+    console.error('Erro ao atualizar categoria:', error);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// Deletar categoria de documento
+router.delete('/categories/:id', authenticateToken, requireRole(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const existing = await getOne('SELECT * FROM document_categories WHERE id = ?', [id]);
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Categoria não encontrada' });
+    }
+
+    // Verificar se há documentos usando esta categoria
+    const documentsUsingCategory = await getOne('SELECT COUNT(*) as count FROM documents WHERE category_id = ?', [id]);
+    
+    if (documentsUsingCategory.count > 0) {
+      return res.status(400).json({ error: 'Não é possível deletar uma categoria que está sendo usada por documentos' });
+    }
+
+    await executeQuery('DELETE FROM document_categories WHERE id = ?', [id]);
+
+    // Log de auditoria
+    await executeQuery(`
+      INSERT INTO audit_logs (id, user_id, action, table_name, record_id, old_values, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+    `, [uuidv4(), req.user.id, 'DELETE', 'document_categories', id, JSON.stringify(existing)]);
+
+    res.json({ message: 'Categoria deletada com sucesso' });
+  } catch (error) {
+    console.error('Erro ao deletar categoria:', error);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
 // Criar documento
 router.post('/', authenticateToken, requireRole(['admin', 'tecnico']), async (req, res) => {
   try {
     const {
       title,
-      type,
-      version,
       file_path,
       approved_by,
       approval_date,
       review_date,
       next_review_date,
-      category
+      category,
+      code,
+      prefix,
+      revision,
+      revision_date
     } = req.body;
 
-    if (!title || !type || !version) {
-      return res.status(400).json({ error: 'Título, tipo e versão são obrigatórios' });
+    console.log('Dados recebidos:', req.body);
+
+    if (!title) {
+      return res.status(400).json({ error: 'Título é obrigatório' });
     }
 
     const id = uuidv4();
+    const params = [
+      id, title, '1.0', file_path, 'ativo', approved_by,
+      approval_date, review_date, next_review_date, category,
+      code, prefix, revision, revision_date
+    ];
+
+    console.log('Parâmetros para inserção:', params);
+
     await executeQuery(`
       INSERT INTO documents (
-        id, title, type, version, file_path, status, approved_by,
+        id, title, version, file_path, status, approved_by,
         approval_date, review_date, next_review_date, category,
+        code, prefix, revision, revision_date,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-    `, [
-      id, title, type, version, file_path, 'ativo', approved_by,
-      approval_date, review_date, next_review_date, category
-    ]);
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+    `, params);
 
     // Log de auditoria
     await executeQuery(`
@@ -87,7 +200,7 @@ router.post('/', authenticateToken, requireRole(['admin', 'tecnico']), async (re
 
     res.status(201).json({ id, message: 'Documento criado com sucesso' });
   } catch (error) {
-    console.error('Erro ao criar documento:', error);
+    console.error('Erro detalhado ao criar documento:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
@@ -98,7 +211,6 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'tecnico']), async (
     const { id } = req.params;
     const {
       title,
-      type,
       version,
       file_path,
       status,
@@ -106,7 +218,11 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'tecnico']), async (
       approval_date,
       review_date,
       next_review_date,
-      category
+      category,
+      code,
+      prefix,
+      revision,
+      revision_date
     } = req.body;
 
     // Verificar se o documento existe
@@ -118,13 +234,15 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'tecnico']), async (
 
     await executeQuery(`
       UPDATE documents SET
-        title = ?, type = ?, version = ?, file_path = ?, status = ?,
+        title = ?, version = ?, file_path = ?, status = ?,
         approved_by = ?, approval_date = ?, review_date = ?, next_review_date = ?,
-        category = ?, updated_at = datetime('now')
+        category = ?, code = ?, prefix = ?, revision = ?, revision_date = ?,
+        updated_at = datetime('now')
       WHERE id = ?
     `, [
-      title, type, version, file_path, status, approved_by,
-      approval_date, review_date, next_review_date, category, id
+      title, version, file_path, status, approved_by,
+      approval_date, review_date, next_review_date, category,
+      code, prefix, revision, revision_date, id
     ]);
 
     // Log de auditoria

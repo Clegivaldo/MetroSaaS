@@ -8,6 +8,7 @@ import { Dashboard } from './pages/Dashboard';
 import { Clients } from './pages/Clients';
 import { Certificates } from './pages/Certificates';
 import { Standards } from './pages/Standards';
+import { EquipmentTypes } from './pages/EquipmentTypes';
 import { Appointments } from './pages/Appointments';
 import { Documents } from './pages/Documents';
 import { Suppliers } from './pages/Suppliers';
@@ -17,6 +18,14 @@ import { Settings } from './pages/Settings';
 import { Profile } from './pages/Profile';
 import { Activities } from './pages/Activities';
 import { Notifications } from './pages/Notifications';
+import { Maintenance } from './pages/Maintenance';
+import { NonConformities } from './pages/NonConformities';
+import { StandardTypes } from './pages/StandardTypes';
+import { DocumentCategories } from './pages/DocumentCategories';
+import { UserPermissions } from './pages/UserPermissions';
+import { Users } from './pages/Users';
+import { Grandezas } from './pages/Grandezas';
+import { ClientEquipment } from './pages/ClientEquipment';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -50,11 +59,19 @@ function AppRoutes() {
         <Route path="/clientes" element={<Clients />} />
         <Route path="/certificados" element={<Certificates />} />
         <Route path="/padroes" element={<Standards />} />
+        <Route path="/tipos-equipamentos" element={<EquipmentTypes />} />
+        <Route path="/equipamentos-clientes" element={<ClientEquipment />} />
         <Route path="/agendamentos" element={<Appointments />} />
         <Route path="/documentos" element={<Documents />} />
+        <Route path="/categorias-documentos" element={<DocumentCategories />} />
+        <Route path="/grandezas" element={<Grandezas />} />
+        <Route path="/permissoes" element={<UserPermissions />} />
+        <Route path="/users" element={<Users />} />
         <Route path="/fornecedores" element={<Suppliers />} />
         <Route path="/treinamentos" element={<Trainings />} />
         <Route path="/treinamentos-sistema" element={<SystemTrainings />} />
+        <Route path="/manutencao" element={<Maintenance />} />
+        <Route path="/nao-conformidades" element={<NonConformities />} />
         <Route path="/configuracoes" element={<Settings />} />
         <Route path="/perfil" element={<Profile />} />
         <Route path="/atividades" element={<Activities />} />

@@ -88,7 +88,7 @@ router.post('/', authenticateToken, requireRole(['admin']), async (req, res) => 
 });
 
 // Atualizar usuário
-router.put('/:id', authenticateToken, requireRole(['admin']), async (req, res) => {
+router.put('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const { name, email, role, status } = req.body;
@@ -100,11 +100,29 @@ router.put('/:id', authenticateToken, requireRole(['admin']), async (req, res) =
       return res.status(404).json({ error: 'Usuário não encontrado' });
     }
 
-    await executeQuery(`
-      UPDATE users SET
-        name = ?, email = ?, role = ?, status = ?, updated_at = datetime('now')
-      WHERE id = ?
-    `, [name, email, role, status, id]);
+    // Verificar permissões: apenas admin pode alterar role e status, ou o próprio usuário pode alterar nome e email
+    if (req.user.role !== 'admin' && id !== req.user.id) {
+      return res.status(403).json({ error: 'Permissão insuficiente' });
+    }
+
+    // Se não for admin, só pode alterar nome e email
+    if (req.user.role !== 'admin') {
+      await executeQuery(`
+        UPDATE users SET
+          name = ?, email = ?, updated_at = datetime('now')
+        WHERE id = ?
+      `, [name, email, id]);
+    } else {
+      // Garantir que role e status não sejam null
+      const updateRole = role || existing.role;
+      const updateStatus = status || existing.status;
+      
+      await executeQuery(`
+        UPDATE users SET
+          name = ?, email = ?, role = ?, status = ?, updated_at = datetime('now')
+        WHERE id = ?
+      `, [name, email, updateRole, updateStatus, id]);
+    }
 
     // Log de auditoria
     await executeQuery(`
@@ -248,6 +266,141 @@ router.post('/:id/reset-password', authenticateToken, requireRole(['admin']), as
     res.json({ message: 'Nova senha enviada por email' });
   } catch (error) {
     console.error('Erro ao resetar senha:', error);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// Obter permissões de um usuário
+router.get('/:userId/permissions', authenticateToken, requireRole(['admin']), async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    const userPermissions = await getAll(`
+      SELECT up.permission_id, up.granted, p.name, p.description, p.module
+      FROM user_permissions up
+      JOIN permissions p ON up.permission_id = p.id
+      WHERE up.user_id = ?
+    `, [userId]);
+
+    res.json(userPermissions);
+  } catch (error) {
+    console.error('Erro ao obter permissões do usuário:', error);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// Atualizar permissão de um usuário
+router.put('/:userId/permissions/:permissionId', authenticateToken, requireRole(['admin']), async (req, res) => {
+  try {
+    const { userId, permissionId } = req.params;
+    const { granted } = req.body;
+
+    // Verificar se o usuário existe
+    const user = await getOne('SELECT * FROM users WHERE id = ?', [userId]);
+    if (!user) {
+      return res.status(404).json({ error: 'Usuário não encontrado' });
+    }
+
+    // Verificar se a permissão existe
+    const permission = await getOne('SELECT * FROM permissions WHERE id = ?', [permissionId]);
+    if (!permission) {
+      return res.status(404).json({ error: 'Permissão não encontrada' });
+    }
+
+    // Verificar se já existe registro
+    const existing = await getOne('SELECT * FROM user_permissions WHERE user_id = ? AND permission_id = ?', [userId, permissionId]);
+
+    if (existing) {
+      await executeQuery(`
+        UPDATE user_permissions SET granted = ?, updated_at = datetime('now')
+        WHERE user_id = ? AND permission_id = ?
+      `, [granted, userId, permissionId]);
+    } else {
+      await executeQuery(`
+        INSERT INTO user_permissions (user_id, permission_id, granted, created_at, updated_at)
+        VALUES (?, ?, ?, datetime('now'), datetime('now'))
+      `, [userId, permissionId, granted]);
+    }
+
+    // Log de auditoria
+    await executeQuery(`
+      INSERT INTO audit_logs (id, user_id, action, table_name, record_id, new_values, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+    `, [uuidv4(), req.user.id, 'UPDATE_PERMISSION', 'user_permissions', `${userId}-${permissionId}`, JSON.stringify({ granted })]);
+
+    res.json({ message: 'Permissão atualizada com sucesso' });
+  } catch (error) {
+    console.error('Erro ao atualizar permissão:', error);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// Obter todas as permissões
+router.get('/permissions', authenticateToken, requireRole(['admin']), async (req, res) => {
+  try {
+    const permissions = await getAll('SELECT * FROM permissions ORDER BY module, name');
+    res.json(permissions);
+  } catch (error) {
+    console.error('Erro ao obter permissões:', error);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// Obter permissões de usuários
+router.get('/permissions', authenticateToken, requireRole(['admin']), async (req, res) => {
+  try {
+    const { user_id } = req.query;
+    
+    if (!user_id) {
+      return res.status(400).json({ error: 'ID do usuário é obrigatório' });
+    }
+
+    const permissions = await getAll(`
+      SELECT p.*, up.granted
+      FROM permissions p
+      LEFT JOIN user_permissions up ON p.id = up.permission_id AND up.user_id = ?
+      ORDER BY p.name
+    `, [user_id]);
+
+    res.json(permissions);
+  } catch (error) {
+    console.error('Erro ao obter permissões do usuário:', error);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// Atualizar permissões de usuário
+router.put('/:id/permissions', authenticateToken, requireRole(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { permissions } = req.body;
+
+    // Verificar se o usuário existe
+    const user = await getOne('SELECT id FROM users WHERE id = ?', [id]);
+    if (!user) {
+      return res.status(404).json({ error: 'Usuário não encontrado' });
+    }
+
+    // Limpar permissões existentes
+    await executeQuery('DELETE FROM user_permissions WHERE user_id = ?', [id]);
+
+    // Inserir novas permissões
+    for (const permission of permissions) {
+      await executeQuery(`
+        INSERT INTO user_permissions (id, user_id, permission_id, granted, created_at)
+        VALUES (?, ?, ?, ?, datetime('now'))
+      `, [uuidv4(), id, permission.permission_id, permission.granted ? 1 : 0]);
+    }
+
+    // Log de auditoria
+    await executeQuery(`
+      INSERT INTO audit_logs (id, user_id, action, table_name, record_id, new_values, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+    `, [uuidv4(), req.user.id, 'UPDATE_PERMISSIONS', 'user_permissions', id, JSON.stringify(permissions)]);
+
+    res.json({ message: 'Permissões atualizadas com sucesso' });
+  } catch (error) {
+    console.error('Erro ao atualizar permissões:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });

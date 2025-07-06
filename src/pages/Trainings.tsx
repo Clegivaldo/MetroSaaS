@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, BookOpen, Play, Clock, Edit, Trash2, CheckCircle, User } from 'lucide-react';
+import { Plus, Search, BookOpen, Play, Clock, Edit, Trash2, CheckCircle, User, Award, Shield, Settings, Zap, Filter } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -247,13 +247,16 @@ export function Trainings() {
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
-            <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-              <option value="">Todas categorias</option>
-              <option value="Qualidade">Qualidade</option>
-              <option value="Técnico">Técnico</option>
-              <option value="Segurança">Segurança</option>
-              <option value="Gestão">Gestão</option>
-            </select>
+            <div className="flex items-center space-x-2">
+              <Filter className="w-4 h-4 text-gray-400" />
+              <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                <option value="">Todas categorias</option>
+                <option value="Qualidade">Qualidade</option>
+                <option value="Técnico">Técnico</option>
+                <option value="Segurança">Segurança</option>
+                <option value="Gestão">Gestão</option>
+              </select>
+            </div>
           </div>
 
           {activeTab === 'available' && (
@@ -285,9 +288,20 @@ export function Trainings() {
                       <p className="text-sm text-gray-600 mb-3 line-clamp-2">{training.description}</p>
                       
                       <div className="flex items-center justify-between text-sm text-gray-500 mb-4">
-                        <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs">
-                          {training.category}
-                        </span>
+                        <div className="flex items-center space-x-2">
+                          {training.category === 'Qualidade' && <Award className="w-4 h-4 text-yellow-600" />}
+                          {training.category === 'Técnico' && <Zap className="w-4 h-4 text-blue-600" />}
+                          {training.category === 'Segurança' && <Shield className="w-4 h-4 text-green-600" />}
+                          {training.category === 'Gestão' && <Settings className="w-4 h-4 text-purple-600" />}
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            training.category === 'Qualidade' ? 'bg-yellow-100 text-yellow-800' :
+                            training.category === 'Técnico' ? 'bg-blue-100 text-blue-800' :
+                            training.category === 'Segurança' ? 'bg-green-100 text-green-800' :
+                            'bg-purple-100 text-purple-800'
+                          }`}>
+                            {training.category}
+                          </span>
+                        </div>
                         <div className="flex items-center space-x-1">
                           <Clock className="w-4 h-4" />
                           <span>{training.duration} min</span>
@@ -299,23 +313,32 @@ export function Trainings() {
                           href={training.youtube_url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex-1 flex items-center justify-center space-x-2 bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 transition-colors text-sm"
+                          className="flex-1 flex items-center justify-center bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 transition-colors text-sm"
+                          title="Assistir"
                         >
                           <Play className="w-4 h-4" />
-                          <span>Assistir</span>
                         </a>
                         {!isCompleted && (
                           <button
                             onClick={() => handleCompleteTraining(training.id)}
-                            className="px-3 py-2 text-sm text-green-600 border border-green-600 rounded-lg hover:bg-green-50 transition-colors"
+                            className="flex items-center justify-center px-3 py-2 text-sm text-green-600 border border-green-600 rounded-lg hover:bg-green-50 transition-colors"
+                            title="Concluir"
                           >
-                            Concluir
+                            <CheckCircle className="w-4 h-4" />
                           </button>
                         )}
-                        <button onClick={() => handleEdit(training)} className="px-3 py-2 text-sm text-blue-600 border border-blue-600 rounded-lg hover:bg-blue-50 transition-colors">
+                        <button 
+                          onClick={() => handleEdit(training)} 
+                          className="flex items-center justify-center px-3 py-2 text-sm text-blue-600 border border-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
+                          title="Editar"
+                        >
                           <Edit className="w-4 h-4" />
                         </button>
-                        <button onClick={() => handleDelete(training.id)} className="px-3 py-2 text-sm text-red-600 border border-red-600 rounded-lg hover:bg-red-50 transition-colors">
+                        <button 
+                          onClick={() => handleDelete(training.id)} 
+                          className="flex items-center justify-center px-3 py-2 text-sm text-red-600 border border-red-600 rounded-lg hover:bg-red-50 transition-colors"
+                          title="Deletar"
+                        >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>

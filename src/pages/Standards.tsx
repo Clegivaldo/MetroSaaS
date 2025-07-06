@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Wrench, Calendar, AlertTriangle, CheckCircle, Edit, Trash2, FileText } from 'lucide-react';
+import { Plus, Search, Wrench, Calendar, AlertTriangle, CheckCircle, Edit, Trash2, FileText, X } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -7,37 +7,71 @@ import toast from 'react-hot-toast';
 
 const standardSchema = z.object({
   name: z.string().min(1, 'Nome obrigatório'),
-  serial_number: z.string().min(1, 'Número de série obrigatório'),
-  type: z.string().min(1, 'Tipo obrigatório'),
-  manufacturer: z.string().optional(),
-  model: z.string().optional(),
-  calibration_date: z.string().min(1, 'Data calibração obrigatória'),
-  expiration_date: z.string().min(1, 'Data vencimento obrigatória'),
-  uncertainty: z.string().optional(),
-  range_min: z.number().optional(),
-  range_max: z.number().optional(),
-  unit: z.string().optional(),
+  type_id: z.string().min(1, 'Tipo obrigatório'),
+  brand_id: z.string().optional(),
+  model_id: z.string().optional(),
+  identificacao: z.string().optional(),
+  serial_number: z.string().optional(),
+  certificate_number: z.string().optional(),
+  scales: z.array(z.object({
+    name: z.string().min(1, 'Nome da escala obrigatório'),
+    min: z.number({ invalid_type_error: 'Valor mínimo deve ser número' }),
+    max: z.number({ invalid_type_error: 'Valor máximo deve ser número' }),
+    unit: z.string().min(1, 'Unidade obrigatória'),
+  })).min(1, 'Pelo menos uma escala é obrigatória'),
+}).refine((data) => {
+  return data.identificacao || data.serial_number;
+}, {
+  message: "Identificação ou número de série é obrigatório",
+  path: ["identificacao"]
 });
 
 type StandardFormData = z.infer<typeof standardSchema>;
 
+interface Scale {
+  name: string;
+  min: number;
+  max: number;
+  unit: string;
+}
+
 interface Standard {
   id: string;
   name: string;
-  serial_number: string;
-  type: string;
-  manufacturer?: string;
-  model?: string;
-  calibration_date: string;
-  expiration_date: string;
-  status: 'valido' | 'vencido' | 'prestes_vencer';
-  certificate_path?: string;
-  uncertainty?: string;
-  range_min?: number;
-  range_max?: number;
-  unit?: string;
+  type_id: string;
+  type_name?: string;
+  brand_id?: string;
+  brand_name?: string;
+  model_id?: string;
+  model_name?: string;
+  identificacao?: string;
+  serial_number?: string;
+  certificate_number?: string;
+  scales: Scale[];
   created_at: string;
   updated_at: string;
+}
+
+interface EquipmentType {
+  id: string;
+  name: string;
+  description?: string;
+  grandeza: string;
+}
+
+interface Brand {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+interface Model {
+  id: string;
+  name: string;
+  brand_id: string;
+  brand_name?: string;
+  equipment_type_id: string;
+  equipment_type_name?: string;
 }
 
 const getStatusInfo = (status: string) => {
@@ -55,6 +89,9 @@ const getStatusInfo = (status: string) => {
 
 export function Standards() {
   const [standards, setStandards] = useState<Standard[]>([]);
+  const [equipmentTypes, setEquipmentTypes] = useState<EquipmentType[]>([]);
+  const [brands, setBrands] = useState<Brand[]>([]);
+  const [models, setModels] = useState<Model[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
@@ -63,14 +100,34 @@ export function Standards() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [showBrandModal, setShowBrandModal] = useState(false);
+  const [showModelModal, setShowModelModal] = useState(false);
+  const [newBrand, setNewBrand] = useState({ name: '', description: '' });
+  const [newModel, setNewModel] = useState({ name: '', description: '' });
 
-  const { register, handleSubmit, formState: { errors }, reset, setValue } = useForm<StandardFormData>({
+  const { register, handleSubmit, formState: { errors }, reset, setValue, watch } = useForm<StandardFormData>({
     resolver: zodResolver(standardSchema),
   });
 
+  const watchTypeId = watch('type_id');
+  const watchBrandId = watch('brand_id');
+
   useEffect(() => {
     fetchStandards();
+    fetchEquipmentTypes();
   }, [searchTerm, statusFilter, typeFilter]);
+
+  useEffect(() => {
+    if (watchTypeId) {
+      fetchBrandsByType(watchTypeId);
+    }
+  }, [watchTypeId]);
+
+  useEffect(() => {
+    if (watchBrandId && watchTypeId) {
+      fetchModelsByBrandAndType(watchBrandId, watchTypeId);
+    }
+  }, [watchBrandId, watchTypeId]);
 
   const fetchStandards = async () => {
     try {
@@ -94,6 +151,54 @@ export function Standards() {
       toast.error('Erro ao carregar padrões');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchEquipmentTypes = async () => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch('http://localhost:3001/api/equipment-types', {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setEquipmentTypes(data);
+      }
+    } catch (error) {
+      console.error('Erro ao carregar tipos de equipamentos');
+    }
+  };
+
+  const fetchBrandsByType = async (typeId: string) => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch(`http://localhost:3001/api/brands?equipment_type_id=${typeId}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setBrands(data);
+      }
+    } catch (error) {
+      console.error('Erro ao carregar marcas');
+    }
+  };
+
+  const fetchModelsByBrandAndType = async (brandId: string, typeId: string) => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch(`http://localhost:3001/api/models?brand_id=${brandId}&equipment_type_id=${typeId}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setModels(data);
+      }
+    } catch (error) {
+      console.error('Erro ao carregar modelos');
     }
   };
 
@@ -152,9 +257,13 @@ export function Standards() {
 
   const handleEdit = (standard: Standard) => {
     setEditingStandard(standard);
-    Object.keys(standard).forEach(key => {
-      setValue(key as keyof StandardFormData, standard[key as keyof Standard] as any);
-    });
+    setValue('name', standard.name);
+    setValue('type_id', standard.type_id);
+    setValue('brand_id', standard.brand_id || '');
+    setValue('model_id', standard.model_id || '');
+    setValue('identificacao', standard.identificacao || '');
+    setValue('serial_number', standard.serial_number || '');
+    setValue('certificate_number', standard.certificate_number || '');
     setShowModal(true);
   };
 
@@ -172,18 +281,97 @@ export function Standards() {
         fetchStandards();
       } else {
         const error = await response.json();
-        toast.error(error.error || 'Erro ao deletar');
+        toast.error(error.error || 'Erro ao deletar padrão');
       }
     } catch (error) {
-      toast.error('Erro ao deletar');
+      toast.error('Erro ao deletar padrão');
     }
   };
 
   const openCreateModal = () => {
     setEditingStandard(null);
-    setSelectedFile(null);
     reset();
+    setSelectedFile(null);
     setShowModal(true);
+  };
+
+  const resetForm = () => {
+    reset();
+    setSelectedFile(null);
+    setEditingStandard(null);
+  };
+
+  const addScale = () => {
+    const currentScales = watch('scales') || [];
+    setValue('scales', [...currentScales, { name: '', min: 0, max: 0, unit: '' }]);
+  };
+
+  const removeScale = (index: number) => {
+    const currentScales = watch('scales') || [];
+    const newScales = currentScales.filter((_, i) => i !== index);
+    setValue('scales', newScales);
+  };
+
+  const updateScale = (index: number, field: keyof Scale, value: string | number) => {
+    const currentScales = watch('scales') || [];
+    const newScales = [...currentScales];
+    newScales[index] = { ...newScales[index], [field]: value };
+    setValue('scales', newScales);
+  };
+
+  const createBrand = async () => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch('http://localhost:3001/api/brands', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          name: newBrand.name,
+          description: newBrand.description,
+          equipment_type_id: watchTypeId
+        }),
+      });
+
+      if (response.ok) {
+        toast.success('Marca criada com sucesso!');
+        setShowBrandModal(false);
+        setNewBrand({ name: '', description: '' });
+        fetchBrandsByType(watchTypeId);
+      } else {
+        const error = await response.json();
+        toast.error(error.error || 'Erro ao criar marca');
+      }
+    } catch (error) {
+      toast.error('Erro ao criar marca');
+    }
+  };
+
+  const createModel = async () => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch('http://localhost:3001/api/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          name: newModel.name,
+          description: newModel.description,
+          brand_id: watchBrandId,
+          equipment_type_id: watchTypeId
+        }),
+      });
+
+      if (response.ok) {
+        toast.success('Modelo criado com sucesso!');
+        setShowModelModal(false);
+        setNewModel({ name: '', description: '' });
+        fetchModelsByBrandAndType(watchBrandId, watchTypeId);
+      } else {
+        const error = await response.json();
+        toast.error(error.error || 'Erro ao criar modelo');
+      }
+    } catch (error) {
+      toast.error('Erro ao criar modelo');
+    }
   };
 
   if (loading) {
@@ -197,7 +385,7 @@ export function Standards() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Padrões do Laboratório</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Padrões de Calibração</h1>
         <button onClick={openCreateModal} className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
           <Plus className="w-4 h-4" />
           <span>Novo Padrão</span>
@@ -205,120 +393,95 @@ export function Standards() {
       </div>
 
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-        <div className="flex items-center space-x-4">
+        <div className="flex items-center space-x-4 mb-6">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
             <input
               type="text"
-              placeholder="Pesquisar..."
+              placeholder="Pesquisar padrões..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-            <option value="">Todos status</option>
-            <option value="valido">Válido</option>
-            <option value="prestes_vencer">Prestes a Vencer</option>
-            <option value="vencido">Vencido</option>
-          </select>
           <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-            <option value="">Todos tipos</option>
-            <option value="Massa">Massa</option>
-            <option value="Temperatura">Temperatura</option>
-            <option value="Pressão">Pressão</option>
-            <option value="Dimensional">Dimensional</option>
-            <option value="Elétrico">Elétrico</option>
-            <option value="Tempo">Tempo</option>
+            <option value="">Todos os tipos</option>
+            {equipmentTypes.map(type => (
+              <option key={type.id} value={type.name}>{type.name}</option>
+            ))}
           </select>
         </div>
-      </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Padrão</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Número Série</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Calibração</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vencimento</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Marca/Modelo</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Identificação</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Escalas</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {standards.map((standard) => {
-                const statusInfo = getStatusInfo(standard.status);
-                const StatusIcon = statusInfo.icon;
-                
-                return (
-                  <tr key={standard.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
-                          <Wrench className="w-5 h-5 text-blue-600" />
-                        </div>
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">{standard.name}</div>
-                          <div className="text-sm text-gray-500">{standard.manufacturer} {standard.model}</div>
-                        </div>
+              {standards.map((standard) => (
+                <tr key={standard.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center">
+                      <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
+                        <Wrench className="w-5 h-5 text-blue-600" />
                       </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{standard.serial_number}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{standard.type}</td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center text-sm text-gray-900">
-                        <Calendar className="w-4 h-4 mr-2 text-gray-400" />
-                        {new Date(standard.calibration_date).toLocaleDateString('pt-BR')}
+                      <div>
+                        <div className="text-sm font-medium text-gray-900">{standard.name}</div>
+                        <div className="text-sm text-gray-500">{standard.type_name}</div>
                       </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center text-sm text-gray-900">
-                        <Calendar className="w-4 h-4 mr-2 text-gray-400" />
-                        {new Date(standard.expiration_date).toLocaleDateString('pt-BR')}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusInfo.color}`}>
-                        <StatusIcon className={`w-3 h-3 mr-1 ${statusInfo.iconColor}`} />
-                        {statusInfo.label}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <div className="flex space-x-2">
-                        <button onClick={() => handleEdit(standard)} className="text-blue-600 hover:text-blue-900 transition-colors">
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        <button onClick={() => handleDelete(standard.id)} className="text-red-600 hover:text-red-900 transition-colors">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                        {standard.certificate_path && (
-                          <a href={`http://localhost:3001${standard.certificate_path}`} target="_blank" rel="noopener noreferrer" className="text-green-600 hover:text-green-900 transition-colors">
-                            <FileText className="w-4 h-4" />
-                          </a>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{standard.type_name}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {standard.brand_name && standard.model_name ? `${standard.brand_name} ${standard.model_name}` : 'N/A'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {standard.identificacao || standard.serial_number || 'N/A'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {standard.scales?.length || 0} escala(s)
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => handleEdit(standard)}
+                        className="text-blue-600 hover:text-blue-900 transition-colors"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(standard.id)}
+                        className="text-red-600 hover:text-red-900 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
+
+        {standards.length === 0 && (
+          <div className="text-center py-8">
+            <Wrench className="mx-auto h-12 w-12 text-gray-400" />
+            <h3 className="mt-2 text-sm font-medium text-gray-900">Nenhum padrão encontrado</h3>
+            <p className="mt-1 text-sm text-gray-500">
+              {searchTerm ? 'Tente ajustar os filtros.' : 'Comece criando um novo padrão de calibração.'}
+            </p>
+          </div>
+        )}
       </div>
 
-      {standards.length === 0 && (
-        <div className="text-center py-12">
-          <Wrench className="mx-auto h-12 w-12 text-gray-400" />
-          <h3 className="mt-2 text-sm font-medium text-gray-900">Nenhum padrão encontrado</h3>
-          <p className="mt-1 text-sm text-gray-500">
-            {searchTerm || statusFilter || typeFilter ? 'Ajuste sua pesquisa.' : 'Cadastre seu primeiro padrão.'}
-          </p>
-        </div>
-      )}
-
+      {/* Modal de Padrão */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -329,94 +492,273 @@ export function Standards() {
 
               <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
+                  <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">Nome *</label>
-                    <input {...register('name')} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Ex: Padrão de Massa 1kg" />
+                    <input {...register('name')} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
                     {errors.name && <p className="mt-1 text-sm text-red-600">{errors.name.message}</p>}
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Número de Série *</label>
-                    <input {...register('serial_number')} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Ex: PM-001" />
-                    {errors.serial_number && <p className="mt-1 text-sm text-red-600">{errors.serial_number.message}</p>}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Tipo *</label>
-                    <select {...register('type')} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                      <option value="">Selecione</option>
-                      <option value="Massa">Massa</option>
-                      <option value="Temperatura">Temperatura</option>
-                      <option value="Pressão">Pressão</option>
-                      <option value="Dimensional">Dimensional</option>
-                      <option value="Elétrico">Elétrico</option>
-                      <option value="Tempo">Tempo</option>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Tipo de Equipamento *</label>
+                    <select {...register('type_id')} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                      <option value="">Selecione o tipo</option>
+                      {equipmentTypes.map((type) => (
+                        <option key={type.id} value={type.id}>{type.name}</option>
+                      ))}
                     </select>
-                    {errors.type && <p className="mt-1 text-sm text-red-600">{errors.type.message}</p>}
+                    {errors.type_id && <p className="mt-1 text-sm text-red-600">{errors.type_id.message}</p>}
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Fabricante</label>
-                    <input {...register('manufacturer')} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Ex: Mettler Toledo" />
+                    <div className="flex items-center justify-between">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Marca</label>
+                      <button
+                        type="button"
+                        onClick={() => setShowBrandModal(true)}
+                        className="text-xs text-blue-600 hover:text-blue-800"
+                      >
+                        + Nova Marca
+                      </button>
+                    </div>
+                    <select {...register('brand_id')} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                      <option value="">Selecione a marca</option>
+                      {brands.map((brand) => (
+                        <option key={brand.id} value={brand.id}>{brand.name}</option>
+                      ))}
+                    </select>
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Modelo</label>
-                    <input {...register('model')} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Ex: XS205" />
+                    <div className="flex items-center justify-between">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Modelo</label>
+                      <button
+                        type="button"
+                        onClick={() => setShowModelModal(true)}
+                        className="text-xs text-blue-600 hover:text-blue-800"
+                      >
+                        + Novo Modelo
+                      </button>
+                    </div>
+                    <select {...register('model_id')} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                      <option value="">Selecione o modelo</option>
+                      {models.map((model) => (
+                        <option key={model.id} value={model.id}>{model.name}</option>
+                      ))}
+                    </select>
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Data Calibração *</label>
-                    <input type="date" {...register('calibration_date')} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
-                    {errors.calibration_date && <p className="mt-1 text-sm text-red-600">{errors.calibration_date.message}</p>}
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Identificação</label>
+                    <input {...register('identificacao')} placeholder="Ex: PAT-001" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Data Vencimento *</label>
-                    <input type="date" {...register('expiration_date')} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
-                    {errors.expiration_date && <p className="mt-1 text-sm text-red-600">{errors.expiration_date.message}</p>}
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Número de Série</label>
+                    <input {...register('serial_number')} placeholder="Ex: SN123456" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">PDF do Certificado</label>
-                    <input 
-                      type="file" 
-                      accept=".pdf"
-                      onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
-                    />
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Número do Certificado</label>
+                    <input {...register('certificate_number')} placeholder="Ex: CERT-2024-001" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                  </div>
+                </div>
+
+                {/* Escalas */}
+                <div className="border-t pt-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-medium text-gray-900">Escalas</h3>
+                    <button
+                      type="button"
+                      onClick={addScale}
+                      className="flex items-center space-x-1 text-sm text-blue-600 hover:text-blue-800"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Adicionar Escala</span>
+                    </button>
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Incerteza</label>
-                    <input {...register('uncertainty')} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Ex: ±0.1 mg" />
-                  </div>
+                  {watch('scales')?.map((scale, index) => (
+                    <div key={index} className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 border border-gray-200 rounded-lg mb-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Nome da Escala</label>
+                        <input
+                          value={scale.name}
+                          onChange={(e) => updateScale(index, 'name', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          placeholder="Ex: Temperatura"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Valor Mínimo</label>
+                        <input
+                          type="number"
+                          value={scale.min}
+                          onChange={(e) => updateScale(index, 'min', parseFloat(e.target.value) || 0)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Valor Máximo</label>
+                        <input
+                          type="number"
+                          value={scale.max}
+                          onChange={(e) => updateScale(index, 'max', parseFloat(e.target.value) || 0)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                      </div>
+                      <div className="flex items-end space-x-2">
+                        <div className="flex-1">
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Unidade</label>
+                          <input
+                            value={scale.unit}
+                            onChange={(e) => updateScale(index, 'unit', e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="Ex: °C"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeScale(index)}
+                          className="text-red-600 hover:text-red-800"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Faixa Mínima</label>
-                    <input type="number" step="any" {...register('range_min', { valueAsNumber: true })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
-                  </div>
+                  {errors.scales && <p className="mt-1 text-sm text-red-600">{errors.scales.message}</p>}
+                </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Faixa Máxima</label>
-                    <input type="number" step="any" {...register('range_max', { valueAsNumber: true })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Unidade</label>
-                    <input {...register('unit')} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Ex: kg, °C, bar" />
-                  </div>
+                {/* Certificado */}
+                <div className="border-t pt-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Certificado (PDF)</label>
+                  <input
+                    type="file"
+                    accept=".pdf"
+                    onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
                 </div>
 
                 <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">
-                  <button type="button" onClick={() => { setShowModal(false); setEditingStandard(null); setSelectedFile(null); reset(); }} className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                  <button
+                    type="button"
+                    onClick={() => { setShowModal(false); resetForm(); }}
+                    className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
                     Cancelar
                   </button>
-                  <button type="submit" disabled={uploading} className="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50">
-                    {uploading ? 'Salvando...' : editingStandard ? 'Atualizar' : 'Criar'} Padrão
+                  <button
+                    type="submit"
+                    disabled={uploading}
+                    className="flex items-center space-x-2 px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                  >
+                    {uploading ? (
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    ) : (
+                      <FileText className="w-4 h-4" />
+                    )}
+                    <span>{editingStandard ? 'Atualizar' : 'Criar'} Padrão</span>
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Nova Marca */}
+      {showBrandModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl max-w-md w-full">
+            <div className="p-6">
+              <h2 className="text-xl font-bold text-gray-900 mb-6">Nova Marca</h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Nome *</label>
+                  <input
+                    value={newBrand.name}
+                    onChange={(e) => setNewBrand({ ...newBrand, name: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Ex: Fluke"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Descrição</label>
+                  <textarea
+                    value={newBrand.description}
+                    onChange={(e) => setNewBrand({ ...newBrand, description: e.target.value })}
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Descrição da marca"
+                  />
+                </div>
+                <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">
+                  <button
+                    type="button"
+                    onClick={() => setShowBrandModal(false)}
+                    className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={createBrand}
+                    disabled={!newBrand.name}
+                    className="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                  >
+                    Criar Marca
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Novo Modelo */}
+      {showModelModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl max-w-md w-full">
+            <div className="p-6">
+              <h2 className="text-xl font-bold text-gray-900 mb-6">Novo Modelo</h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Nome *</label>
+                  <input
+                    value={newModel.name}
+                    onChange={(e) => setNewModel({ ...newModel, name: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Ex: 1551A"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Descrição</label>
+                  <textarea
+                    value={newModel.description}
+                    onChange={(e) => setNewModel({ ...newModel, description: e.target.value })}
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Descrição do modelo"
+                  />
+                </div>
+                <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">
+                  <button
+                    type="button"
+                    onClick={() => setShowModelModal(false)}
+                    className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={createModel}
+                    disabled={!newModel.name}
+                    className="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                  >
+                    Criar Modelo
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>

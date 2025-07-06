@@ -49,6 +49,8 @@ const getStatusInfo = (status: string) => {
 export function Certificates() {
   const [certificates, setCertificates] = useState<Certificate[]>([]);
   const [clients, setClients] = useState<any[]>([]);
+  const [clientEquipments, setClientEquipments] = useState<any[]>([]);
+  const [selectedClientId, setSelectedClientId] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [showModal, setShowModal] = useState(false);
@@ -57,14 +59,24 @@ export function Certificates() {
   const [uploading, setUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
-  const { register, handleSubmit, formState: { errors }, reset, setValue } = useForm<CertificateFormData>({
+  const { register, handleSubmit, formState: { errors }, reset, setValue, watch } = useForm<CertificateFormData>({
     resolver: zodResolver(certificateSchema),
   });
+
+  const watchedClientId = watch('client_id');
 
   useEffect(() => {
     fetchCertificates();
     fetchClients();
   }, [searchTerm, statusFilter]);
+
+  useEffect(() => {
+    if (watchedClientId) {
+      fetchClientEquipments(watchedClientId);
+    } else {
+      setClientEquipments([]);
+    }
+  }, [watchedClientId]);
 
   const fetchCertificates = async () => {
     try {
@@ -102,6 +114,21 @@ export function Certificates() {
       }
     } catch (error) {
       console.error('Erro ao carregar clientes');
+    }
+  };
+
+  const fetchClientEquipments = async (clientId: string) => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch(`http://localhost:3001/api/certificates/client-equipment/${clientId}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setClientEquipments(data);
+      }
+    } catch (error) {
+      console.error('Erro ao carregar equipamentos do cliente');
     }
   };
 
@@ -346,41 +373,48 @@ export function Certificates() {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Equipamento *</label>
-                    <input {...register('equipment_id')} placeholder="Nome do equipamento" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                    <select {...register('equipment_id')} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                      <option value="">Selecione equipamento</option>
+                      {clientEquipments.map(equipment => (
+                        <option key={equipment.id} value={equipment.id}>
+                          {equipment.name} - {equipment.identificacao || equipment.serial_number || 'N/A'}
+                        </option>
+                      ))}
+                    </select>
                     {errors.equipment_id && <p className="mt-1 text-sm text-red-600">{errors.equipment_id.message}</p>}
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Número Certificado *</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Número do Certificado *</label>
                     <input {...register('certificate_number')} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
                     {errors.certificate_number && <p className="mt-1 text-sm text-red-600">{errors.certificate_number.message}</p>}
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Data Calibração *</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Data de Calibração *</label>
                     <input type="date" {...register('calibration_date')} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
                     {errors.calibration_date && <p className="mt-1 text-sm text-red-600">{errors.calibration_date.message}</p>}
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Data Vencimento *</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Data de Vencimento *</label>
                     <input type="date" {...register('expiration_date')} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
                     {errors.expiration_date && <p className="mt-1 text-sm text-red-600">{errors.expiration_date.message}</p>}
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">PDF do Certificado</label>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Observações</label>
+                    <textarea {...register('observations')} rows={3} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Arquivo do Certificado</label>
                     <input 
                       type="file" 
                       accept=".pdf"
                       onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
                     />
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Observações</label>
-                    <textarea {...register('observations')} rows={3} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
                   </div>
                 </div>
 

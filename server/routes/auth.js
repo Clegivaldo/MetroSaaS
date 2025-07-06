@@ -66,9 +66,9 @@ router.post('/login', async (req, res) => {
 
     // Log de auditoria
     await executeQuery(`
-      INSERT INTO audit_logs (id, user_id, action, ip_address, user_agent, created_at)
-      VALUES (?, ?, ?, ?, ?, datetime('now'))
-    `, [uuidv4(), user.id, 'LOGIN', req.ip, req.get('User-Agent')]);
+      INSERT INTO audit_logs (id, user_id, action, table_name, ip_address, user_agent, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+    `, [uuidv4(), user.id, 'LOGIN', 'users', req.headers['x-forwarded-for'] || req.connection.remoteAddress || req.ip, req.get('User-Agent')]);
 
     res.json({
       token,
@@ -118,9 +118,9 @@ router.post('/reset-password', async (req, res) => {
 
     // Log de auditoria
     await executeQuery(`
-      INSERT INTO audit_logs (id, user_id, action, ip_address, user_agent, created_at)
-      VALUES (?, ?, ?, ?, ?, datetime('now'))
-    `, [uuidv4(), user.id, 'PASSWORD_RESET', req.ip, req.get('User-Agent')]);
+      INSERT INTO audit_logs (id, user_id, action, table_name, ip_address, user_agent, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+    `, [uuidv4(), user.id, 'PASSWORD_RESET', 'users', req.ip, req.get('User-Agent')]);
 
     res.json({ message: 'Nova senha enviada por email' });
   } catch (error) {
@@ -130,17 +130,31 @@ router.post('/reset-password', async (req, res) => {
 });
 
 // Verificar token
-router.get('/verify', authenticateToken, (req, res) => {
-  res.json({ user: req.user });
+router.get('/verify', authenticateToken, async (req, res) => {
+  try {
+    const user = await getOne(
+      'SELECT id, email, name, role, status, last_login, created_at, updated_at FROM users WHERE id = ?',
+      [req.user.id]
+    );
+
+    if (!user) {
+      return res.status(401).json({ error: 'Usuário não encontrado' });
+    }
+
+    res.json({ user });
+  } catch (error) {
+    console.error('Erro ao verificar token:', error);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
 });
 
 // Logout
 router.post('/logout', authenticateToken, async (req, res) => {
   // Log de auditoria
   await executeQuery(`
-    INSERT INTO audit_logs (id, user_id, action, ip_address, user_agent, created_at)
-    VALUES (?, ?, ?, ?, ?, datetime('now'))
-  `, [uuidv4(), req.user.id, 'LOGOUT', req.ip, req.get('User-Agent')]);
+    INSERT INTO audit_logs (id, user_id, action, table_name, ip_address, user_agent, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+  `, [uuidv4(), req.user.id, 'LOGOUT', 'users', req.ip, req.get('User-Agent')]);
 
   res.json({ message: 'Logout realizado com sucesso' });
 });

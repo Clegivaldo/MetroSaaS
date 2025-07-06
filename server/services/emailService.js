@@ -1,11 +1,19 @@
 import nodemailer from 'nodemailer';
 import { getAll, getOne, executeQuery } from '../database/connection.js';
 import { v4 as uuidv4 } from 'uuid';
+import logger from '../utils/logger.js';
 
 class EmailService {
   constructor() {
     this.transporter = null;
     this.initializeTransporter();
+    this.emailActions = {
+      user_created: 'Boas-vindas',
+      certificate_created: 'Certificado Criado',
+      certificate_expiring: 'Certificado Vencendo',
+      password_reset: 'Reset de Senha',
+      appointment_created: 'Agendamento Criado'
+    };
   }
 
   async initializeTransporter() {
@@ -173,6 +181,89 @@ class EmailService {
     }
     
     return template;
+  }
+
+  async getTemplateByAction(action) {
+    try {
+      const template = await getOne(
+        'SELECT * FROM email_templates WHERE action = ?',
+        [action]
+      );
+      
+      if (!template) {
+        logger.warn(`Template não encontrado para ação: ${action}`);
+        return null;
+      }
+      
+      return template;
+    } catch (error) {
+      logger.error('Erro ao buscar template de email:', error);
+      return null;
+    }
+  }
+
+  async sendEmailByAction(action, recipientEmail, variables) {
+    try {
+      const template = await this.getTemplateByAction(action);
+      
+      if (!template) {
+        logger.error(`Template não encontrado para ação: ${action}`);
+        return false;
+      }
+
+      // Substituir variáveis no template
+      let subject = template.subject;
+      let body = template.body;
+
+      for (const [key, value] of Object.entries(variables)) {
+        const placeholder = `{{${key}}}`;
+        subject = subject.replace(new RegExp(placeholder, 'g'), value);
+        body = body.replace(new RegExp(placeholder, 'g'), value);
+      }
+
+      // Aqui você implementaria o envio real do email
+      // Por enquanto, apenas logamos
+      logger.info('Email enviado:', {
+        action,
+        recipient: recipientEmail,
+        subject,
+        body: body.substring(0, 100) + '...'
+      });
+
+      return true;
+    } catch (error) {
+      logger.error('Erro ao enviar email:', error);
+      return false;
+    }
+  }
+
+  // Métodos específicos para cada ação
+  async sendWelcomeEmailByAction(email, name, role, password) {
+    return this.sendEmailByAction('user_created', email, {
+      name,
+      email,
+      role,
+      password
+    });
+  }
+
+  async sendCertificateCreatedByAction(email, data) {
+    return this.sendEmailByAction('certificate_created', email, data);
+  }
+
+  async sendCertificateExpiringByAction(email, data) {
+    return this.sendEmailByAction('certificate_expiring', email, data);
+  }
+
+  async sendPasswordResetByAction(email, name, newPassword) {
+    return this.sendEmailByAction('password_reset', email, {
+      name,
+      new_password: newPassword
+    });
+  }
+
+  async sendAppointmentCreatedByAction(email, data) {
+    return this.sendEmailByAction('appointment_created', email, data);
   }
 }
 

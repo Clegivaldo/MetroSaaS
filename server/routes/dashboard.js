@@ -49,24 +49,44 @@ router.get('/stats', authenticateToken, async (req, res) => {
 // Obter atividades recentes
 router.get('/recent-activities', authenticateToken, async (req, res) => {
   try {
+    const { limit = 50, offset = 0 } = req.query;
+    
     const activities = await getAll(`
       SELECT 
+        al.id,
         al.action,
         al.table_name,
+        al.record_id,
+        al.old_values,
+        al.new_values,
+        al.ip_address,
+        al.user_agent,
         al.created_at,
         u.name as user_name,
+        u.email as user_email,
         CASE 
           WHEN al.table_name = 'clients' THEN 'Cliente'
           WHEN al.table_name = 'certificates' THEN 'Certificado'
           WHEN al.table_name = 'standards' THEN 'Padrão'
           WHEN al.table_name = 'appointments' THEN 'Agendamento'
+          WHEN al.table_name = 'documents' THEN 'Documento'
+          WHEN al.table_name = 'suppliers' THEN 'Fornecedor'
+          WHEN al.table_name = 'users' THEN 'Usuário'
+          WHEN al.table_name = 'settings' THEN 'Configuração'
+          WHEN al.table_name = 'email_templates' THEN 'Template de Email'
+          WHEN al.table_name = 'maintenance' THEN 'Manutenção'
+          WHEN al.table_name = 'non_conformities' THEN 'Não Conformidade'
+          WHEN al.table_name = 'complaints' THEN 'Reclamação'
+          WHEN al.table_name = 'audits' THEN 'Auditoria'
+          WHEN al.table_name = 'environmental_conditions' THEN 'Condição Ambiental'
+          WHEN al.table_name = 'test_results' THEN 'Resultado de Teste'
           ELSE al.table_name
         END as entity_type
       FROM audit_logs al
       LEFT JOIN users u ON al.user_id = u.id
       ORDER BY al.created_at DESC
-      LIMIT 10
-    `);
+      LIMIT ? OFFSET ?
+    `, [limit, offset]);
 
     res.json(activities);
   } catch (error) {

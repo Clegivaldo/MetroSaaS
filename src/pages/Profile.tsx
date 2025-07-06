@@ -94,6 +94,7 @@ export function Profile() {
         toast.error(error.error || 'Erro ao atualizar perfil');
       }
     } catch (error) {
+      console.error('Erro ao atualizar perfil:', error);
       toast.error('Erro ao atualizar perfil');
     }
   };

@@ -7,13 +7,13 @@ import toast from 'react-hot-toast';
 
 const documentSchema = z.object({
   title: z.string().min(1, 'Título obrigatório'),
-  type: z.string().min(1, 'Tipo obrigatório'),
-  version: z.string().min(1, 'Versão obrigatória'),
-  category: z.string().optional(),
+  category: z.string().min(1, 'Categoria obrigatória'),
+  code: z.string().min(1, 'Código obrigatório'),
+  revision: z.string().optional(),
+  revision_date: z.string().optional(),
   approved_by: z.string().optional(),
   approval_date: z.string().optional(),
   review_date: z.string().optional(),
-  next_review_date: z.string().optional(),
 });
 
 type DocumentFormData = z.infer<typeof documentSchema>;
@@ -21,8 +21,10 @@ type DocumentFormData = z.infer<typeof documentSchema>;
 interface Document {
   id: string;
   title: string;
-  type: string;
-  version: string;
+  code?: string;
+  prefix?: string;
+  revision?: string;
+  revision_date?: string;
   file_path?: string;
   status: 'ativo' | 'obsoleto' | 'em_revisao';
   approved_by?: string;
@@ -51,8 +53,9 @@ const getStatusInfo = (status: string) => {
 export function Documents() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [users, setUsers] = useState<any[]>([]);
+  const [documentCategories, setDocumentCategories] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [typeFilter, setTypeFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingDocument, setEditingDocument] = useState<Document | null>(null);
@@ -67,15 +70,16 @@ export function Documents() {
   useEffect(() => {
     fetchDocuments();
     fetchUsers();
-  }, [searchTerm, typeFilter, statusFilter]);
+    fetchDocumentCategories();
+  }, [searchTerm, categoryFilter, statusFilter]);
 
   const fetchDocuments = async () => {
     try {
       const token = localStorage.getItem('auth_token');
-      const params = new URLSearchParams();
-      if (searchTerm) params.append('search', searchTerm);
-      if (typeFilter) params.append('type', typeFilter);
-      if (statusFilter) params.append('status', statusFilter);
+          const params = new URLSearchParams();
+    if (searchTerm) params.append('search', searchTerm);
+    if (categoryFilter) params.append('category', categoryFilter);
+    if (statusFilter) params.append('status', statusFilter);
 
       const response = await fetch(`http://localhost:3001/api/documents?${params}`, {
         headers: { 'Authorization': `Bearer ${token}` },
@@ -109,6 +113,21 @@ export function Documents() {
     }
   };
 
+  const fetchDocumentCategories = async () => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch('http://localhost:3001/api/documents/categories', {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setDocumentCategories(data);
+      }
+    } catch (error) {
+      console.error('Erro ao carregar categorias de documentos');
+    }
+  };
+
   const uploadFile = async (file: File) => {
     const formData = new FormData();
     formData.append('file', file);
@@ -134,6 +153,10 @@ export function Documents() {
         file_path = uploadResult.path;
       }
 
+      // Buscar a sigla da categoria selecionada
+      const selectedCategory = documentCategories.find(cat => cat.name === data.category);
+      const prefix = selectedCategory?.sigla || '';
+
       const token = localStorage.getItem('auth_token');
       const url = editingDocument ? `http://localhost:3001/api/documents/${editingDocument.id}` : 'http://localhost:3001/api/documents';
       const method = editingDocument ? 'PUT' : 'POST';
@@ -141,7 +164,12 @@ export function Documents() {
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ ...data, file_path }),
+        body: JSON.stringify({ 
+          ...data, 
+          file_path,
+          prefix, // Prefixo automático baseado na sigla da categoria
+          version: '1.0' // Versão padrão
+        }),
       });
 
       if (response.ok) {
@@ -165,13 +193,14 @@ export function Documents() {
   const handleEdit = (document: Document) => {
     setEditingDocument(document);
     setValue('title', document.title);
-    setValue('type', document.type);
-    setValue('version', document.version);
+    setValue('code', document.code || '');
+    setValue('revision', document.revision || '');
+    setValue('revision_date', document.revision_date ? document.revision_date.split('T')[0] : '');
     setValue('category', document.category || '');
     setValue('approved_by', document.approved_by || '');
     setValue('approval_date', document.approval_date ? document.approval_date.split('T')[0] : '');
     setValue('review_date', document.review_date ? document.review_date.split('T')[0] : '');
-    setValue('next_review_date', document.next_review_date ? document.next_review_date.split('T')[0] : '');
+
     setShowModal(true);
   };
 
@@ -233,13 +262,11 @@ export function Documents() {
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
-          <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-            <option value="">Todos tipos</option>
-            <option value="Procedimento">Procedimento</option>
-            <option value="Instrução">Instrução</option>
-            <option value="Manual">Manual</option>
-            <option value="Política">Política</option>
-            <option value="Formulário">Formulário</option>
+          <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+            <option value="">Todas categorias</option>
+            {documentCategories.map(category => (
+              <option key={category.id} value={category.name}>{category.name}</option>
+            ))}
           </select>
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
             <option value="">Todos status</option>
@@ -256,11 +283,11 @@ export function Documents() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Documento</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categoria</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Versão</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aprovado por</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Próxima Revisão</th>
+
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
               </tr>
             </thead>
@@ -281,8 +308,10 @@ export function Documents() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{document.type}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{document.version}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{document.category}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {document.code && document.prefix ? `${document.prefix}${document.code}` : document.code || 'N/A'}
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusInfo.color}`}>
                         {statusInfo.label}
@@ -291,9 +320,7 @@ export function Documents() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {document.approved_by_name || 'Não aprovado'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {document.next_review_date ? new Date(document.next_review_date).toLocaleDateString('pt-BR') : '-'}
-                    </td>
+
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex space-x-2">
                         <button onClick={() => handleEdit(document)} className="text-blue-600 hover:text-blue-900 transition-colors">
@@ -322,7 +349,7 @@ export function Documents() {
           <FileText className="mx-auto h-12 w-12 text-gray-400" />
           <h3 className="mt-2 text-sm font-medium text-gray-900">Nenhum documento encontrado</h3>
           <p className="mt-1 text-sm text-gray-500">
-            {searchTerm || typeFilter || statusFilter ? 'Ajuste sua pesquisa.' : 'Cadastre seu primeiro documento.'}
+            {searchTerm || categoryFilter || statusFilter ? 'Ajuste sua pesquisa.' : 'Cadastre seu primeiro documento.'}
           </p>
         </div>
       )}
@@ -344,27 +371,30 @@ export function Documents() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Tipo *</label>
-                    <select {...register('type')} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                      <option value="">Selecione</option>
-                      <option value="Procedimento">Procedimento</option>
-                      <option value="Instrução">Instrução</option>
-                      <option value="Manual">Manual</option>
-                      <option value="Política">Política</option>
-                      <option value="Formulário">Formulário</option>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Categoria *</label>
+                    <select {...register('category')} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                      <option value="">Selecione categoria</option>
+                      {documentCategories.map((category) => (
+                        <option key={category.id} value={category.name}>{category.name}</option>
+                      ))}
                     </select>
-                    {errors.type && <p className="mt-1 text-sm text-red-600">{errors.type.message}</p>}
+                    {errors.category && <p className="mt-1 text-sm text-red-600">{errors.category.message}</p>}
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Versão *</label>
-                    <input {...register('version')} placeholder="Ex: 1.0" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
-                    {errors.version && <p className="mt-1 text-sm text-red-600">{errors.version.message}</p>}
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Código *</label>
+                    <input {...register('code')} placeholder="Ex: 001" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                    {errors.code && <p className="mt-1 text-sm text-red-600">{errors.code.message}</p>}
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Categoria</label>
-                    <input {...register('category')} placeholder="Ex: Qualidade, Técnico" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Revisão</label>
+                    <input {...register('revision')} placeholder="Ex: 015" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Data da Revisão</label>
+                    <input type="date" {...register('revision_date')} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
                   </div>
 
                   <div>
@@ -392,15 +422,6 @@ export function Documents() {
                     <input type="date" {...register('approval_date')} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Data de Revisão</label>
-                    <input type="date" {...register('review_date')} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Próxima Revisão</label>
-                    <input type="date" {...register('next_review_date')} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
-                  </div>
                 </div>
 
                 <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">

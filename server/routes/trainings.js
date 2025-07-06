@@ -212,17 +212,19 @@ router.post('/:id/complete', authenticateToken, async (req, res) => {
 // Obter participações do usuário
 router.get('/user/participations', authenticateToken, async (req, res) => {
   try {
+    const userId = req.user.id;
+    
     const participations = await getAll(`
-      SELECT tp.*, t.title, t.category, t.duration
-      FROM training_participations tp
-      JOIN trainings t ON tp.training_id = t.id
-      WHERE tp.user_id = ?
-      ORDER BY tp.created_at DESC
-    `, [req.user.id]);
+      SELECT t.*, tp.completed_at, tp.progress
+      FROM trainings t
+      LEFT JOIN training_participations tp ON t.id = tp.training_id AND tp.user_id = ?
+      WHERE t.status = 'ativo'
+      ORDER BY t.created_at DESC
+    `, [userId]);
 
     res.json(participations);
   } catch (error) {
-    console.error('Erro ao obter participações:', error);
+    console.error('Erro ao obter participações do usuário:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });

@@ -20,6 +20,7 @@ export function LoginForm() {
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors },
   } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
@@ -114,9 +115,41 @@ export function LoginForm() {
           </form>
 
           <div className="mt-6 text-center">
-            <p className="text-xs text-gray-500">
-              Dados de teste: admin@metrosass.com / admin123
+            <p className="text-xs text-gray-500 mb-3">
+              Usuários de teste:
             </p>
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setValue('email', 'admin@metrosass.com');
+                  setValue('password', 'admin123');
+                }}
+                className="block w-full text-xs text-blue-600 hover:text-blue-800 font-medium"
+              >
+                👑 Administrador: admin@metrosass.com
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setValue('email', 'usuario@metrosass.com');
+                  setValue('password', 'usuario123');
+                }}
+                className="block w-full text-xs text-green-600 hover:text-green-800 font-medium"
+              >
+                👤 Usuário: usuario@metrosass.com
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setValue('email', 'tecnico@metrosass.com');
+                  setValue('password', 'tech123');
+                }}
+                className="block w-full text-xs text-purple-600 hover:text-purple-800 font-medium"
+              >
+                🔧 Técnico: tecnico@metrosass.com
+              </button>
+            </div>
           </div>
         </div>
       </div>

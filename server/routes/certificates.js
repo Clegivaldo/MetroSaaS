@@ -12,16 +12,16 @@ router.get('/', authenticateToken, async (req, res) => {
     const { search, status, client_id } = req.query;
     
     let query = `
-      SELECT c.*, cl.name as client_name, e.name as equipment_name
+      SELECT c.*, cl.name as client_name, ce.identificacao as equipment_name
       FROM certificates c
       LEFT JOIN clients cl ON c.client_id = cl.id
-      LEFT JOIN equipment e ON c.equipment_id = e.id
+      LEFT JOIN client_equipment ce ON c.equipment_id = ce.id
       WHERE 1=1
     `;
     const params = [];
 
     if (search) {
-      query += ' AND (cl.name LIKE ? OR e.name LIKE ? OR c.certificate_number LIKE ?)';
+      query += ' AND (cl.name LIKE ? OR ce.identificacao LIKE ? OR c.certificate_number LIKE ?)';
       params.push(`%${search}%`, `%${search}%`, `%${search}%`);
     }
 
@@ -41,6 +41,25 @@ router.get('/', authenticateToken, async (req, res) => {
     res.json(certificates);
   } catch (error) {
     console.error('Erro ao listar certificados:', error);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// Obter equipamentos de um cliente
+router.get('/client-equipment/:client_id', authenticateToken, async (req, res) => {
+  try {
+    const { client_id } = req.params;
+    
+    const equipments = await getAll(`
+      SELECT id, identificacao, serial_number, brand, model
+      FROM client_equipment 
+      WHERE client_id = ?
+      ORDER BY identificacao
+    `, [client_id]);
+    
+    res.json(equipments);
+  } catch (error) {
+    console.error('Erro ao obter equipamentos do cliente:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
@@ -85,12 +104,12 @@ router.post('/', authenticateToken, requireRole(['admin', 'tecnico']), async (re
     await executeQuery(`
       INSERT INTO certificates (
         id, client_id, equipment_id, certificate_number, calibration_date, 
-        expiration_date, status, technician_id, observations, pdf_path,
+        expiration_date, status, observations, pdf_path,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
     `, [
       id, client_id, equipment_id, certificate_number, calibration_date,
-      expiration_date, status, req.user.id, observations, pdf_path
+      expiration_date, status, observations, pdf_path
     ]);
 
     // Criar histórico
